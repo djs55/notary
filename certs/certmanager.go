@@ -47,33 +47,60 @@ func (err ErrRootRotationFail) Error() string {
 
 // NewManager returns an initialized Manager, or an error
 // if it fails to load certificates
-func NewManager(baseDir string) (*Manager, error) {
-	trustPath := filepath.Join(baseDir, trustDir)
+// If stateless is true, the Manager uses a memory store
+func NewManager(baseDir string, stateless bool) (*Manager, error) {
+	var trustedCAStore trustmanager.X509Store
+	var trustedCertificateStore trustmanager.X509Store
 
-	// Load all CAs that aren't expired and don't use SHA1
-	trustedCAStore, err := trustmanager.NewX509FilteredFileStore(trustPath, func(cert *x509.Certificate) bool {
-		return cert.IsCA && cert.BasicConstraintsValid && cert.SubjectKeyId != nil &&
+	if stateless {
+		// Load all CAs that aren't expired and don't use SHA1 into memory
+		trustedCAMemStore := trustmanager.NewX509FilteredMemStore(func(cert *x509.Certificate) bool {
+			return cert.IsCA && cert.BasicConstraintsValid && cert.SubjectKeyId != nil &&
 			time.Now().Before(cert.NotAfter) &&
 			cert.SignatureAlgorithm != x509.SHA1WithRSA &&
 			cert.SignatureAlgorithm != x509.DSAWithSHA1 &&
 			cert.SignatureAlgorithm != x509.ECDSAWithSHA1
-	})
-	if err != nil {
-		return nil, err
-	}
+		})
+		trustedCAStore = trustedCAMemStore
 
-	// Load all individual (non-CA) certificates that aren't expired and don't use SHA1
-	trustedCertificateStore, err := trustmanager.NewX509FilteredFileStore(trustPath, func(cert *x509.Certificate) bool {
-		return !cert.IsCA &&
+		// Load all individual (non-CA) certificates that aren't expired and don't use SHA1 into memory
+		trustedCertificateFileStore := trustmanager.NewX509FilteredMemStore(func(cert *x509.Certificate) bool {
+			return !cert.IsCA &&
 			time.Now().Before(cert.NotAfter) &&
 			cert.SignatureAlgorithm != x509.SHA1WithRSA &&
 			cert.SignatureAlgorithm != x509.DSAWithSHA1 &&
 			cert.SignatureAlgorithm != x509.ECDSAWithSHA1
-	})
-	if err != nil {
-		return nil, err
-	}
+		})
+		trustedCertificateStore = trustedCertificateFileStore
+	} else {
+		trustPath := filepath.Join(baseDir, trustDir)
 
+		// Load all CAs that aren't expired and don't use SHA1
+		trustedCAFileStore, err := trustmanager.NewX509FilteredFileStore(trustPath, func(cert *x509.Certificate) bool {
+			return cert.IsCA && cert.BasicConstraintsValid && cert.SubjectKeyId != nil &&
+			time.Now().Before(cert.NotAfter) &&
+			cert.SignatureAlgorithm != x509.SHA1WithRSA &&
+			cert.SignatureAlgorithm != x509.DSAWithSHA1 &&
+			cert.SignatureAlgorithm != x509.ECDSAWithSHA1
+		})
+		if err != nil {
+			return nil, err
+		}
+		trustedCAStore = trustedCAFileStore
+
+		// Load all individual (non-CA) certificates that aren't expired and don't use SHA1
+		trustedCertificateFileStore, err := trustmanager.NewX509FilteredFileStore(trustPath, func(cert *x509.Certificate) bool {
+			return !cert.IsCA &&
+			time.Now().Before(cert.NotAfter) &&
+			cert.SignatureAlgorithm != x509.SHA1WithRSA &&
+			cert.SignatureAlgorithm != x509.DSAWithSHA1 &&
+			cert.SignatureAlgorithm != x509.ECDSAWithSHA1
+		})
+		if err != nil {
+			return nil, err
+		}
+		trustedCertificateStore = trustedCertificateFileStore
+	}
 	return &Manager{
 		trustedCAStore:          trustedCAStore,
 		trustedCertificateStore: trustedCertificateStore,

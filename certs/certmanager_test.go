@@ -122,7 +122,7 @@ func TestValidateRoot(t *testing.T) {
 	assert.NoError(t, err, "failed to create a temporary directory: %s", err)
 
 	// Create a Manager
-	certManager, err := NewManager(tempBaseDir)
+	certManager, err := NewManager(tempBaseDir, false)
 	assert.NoError(t, err)
 
 	// Execute our template
@@ -231,7 +231,7 @@ func filestoreWithTwoCerts(t *testing.T, gun, keyAlg string) (
 	cryptoService := cryptoservice.NewCryptoService(gun, fileKeyStore)
 
 	// Create a Manager
-	certManager, err := NewManager(tempBaseDir)
+	certManager, err := NewManager(tempBaseDir, false)
 	assert.NoError(t, err)
 
 	certificates := make([]*x509.Certificate, 2)

@@ -29,5 +29,6 @@ func NewNotaryRepository(baseDir, gun, baseURL string, rt http.RoundTripper,
 		keyStores = append(keyStores, yubiKeyStore)
 	}
 
-	return repositoryFromKeystores(baseDir, gun, baseURL, rt, keyStores)
+	// TODO(riyazdf) fix me
+	return repositoryFromKeystores(baseDir, gun, baseURL, rt, keyStores, false)
 }

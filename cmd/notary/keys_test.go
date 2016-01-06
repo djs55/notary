@@ -292,7 +292,7 @@ func setUpRepo(t *testing.T, tempBaseDir, gun string, ret passphrase.Retriever) 
 		}))
 
 	repo, err := client.NewNotaryRepository(
-		tempBaseDir, gun, ts.URL, http.DefaultTransport, ret)
+		tempBaseDir, gun, ts.URL, http.DefaultTransport, ret, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	rootPubKey, err := repo.CryptoService.Create("root", data.ECDSAKey)
@@ -333,7 +333,7 @@ func TestRotateKeyRemoteServerManagesKey(t *testing.T) {
 	err = k.keysRotate(&cobra.Command{}, []string{gun})
 	assert.NoError(t, err)
 
-	repo, err := client.NewNotaryRepository(tempBaseDir, gun, ts.URL, nil, ret)
+	repo, err := client.NewNotaryRepository(tempBaseDir, gun, ts.URL, nil, ret, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	cl, err := repo.GetChangelist()
@@ -371,7 +371,7 @@ func TestRotateKeyBothKeys(t *testing.T) {
 	err = k.keysRotate(&cobra.Command{}, []string{gun})
 	assert.NoError(t, err)
 
-	repo, err := client.NewNotaryRepository(tempBaseDir, gun, ts.URL, nil, ret)
+	repo, err := client.NewNotaryRepository(tempBaseDir, gun, ts.URL, nil, ret, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	cl, err := repo.GetChangelist()

@@ -10,7 +10,7 @@ import (
 )
 
 // NewMemoryStore returns a MetadataStore that operates entirely in memory.
-// Very useful for testing
+// Very useful for testing and stateless mode
 func NewMemoryStore(meta map[string][]byte, files map[string][]byte) RemoteStore {
 	if meta == nil {
 		meta = make(map[string][]byte)

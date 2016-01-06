@@ -52,7 +52,9 @@ func certRemove(cmd *cobra.Command, args []string) {
 	parseConfig()
 
 	trustDir := mainViper.GetString("trust_dir")
-	certManager, err := certs.NewManager(trustDir)
+	// Stateless mode not enabled via CLI
+	// TODO(riyazdf)
+	certManager, err := certs.NewManager(trustDir, false)
 	if err != nil {
 		fatalf("Failed to create a new truststore manager with directory: %s", trustDir)
 	}
@@ -117,7 +119,9 @@ func certList(cmd *cobra.Command, args []string) {
 	parseConfig()
 
 	trustDir := mainViper.GetString("trust_dir")
-	certManager, err := certs.NewManager(trustDir)
+	// Stateless mode not enabled via CLI
+	// TODO(riyazdf)
+	certManager, err := certs.NewManager(trustDir, false)
 	if err != nil {
 		fatalf("Failed to create a new truststore manager with directory: %s", trustDir)
 	}

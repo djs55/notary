@@ -95,7 +95,7 @@ func tufAdd(cmd *cobra.Command, args []string) {
 
 	// no online operations are performed by add so the transport argument
 	// should be nil
-	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), nil, retriever)
+	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), nil, retriever, false)
 	if err != nil {
 		fatalf(err.Error())
 	}
@@ -122,7 +122,7 @@ func tufInit(cmd *cobra.Command, args []string) {
 	parseConfig()
 	gun := args[0]
 
-	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, false), retriever)
+	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, false), retriever, false)
 	if err != nil {
 		fatalf(err.Error())
 	}
@@ -158,7 +158,7 @@ func tufList(cmd *cobra.Command, args []string) {
 	parseConfig()
 	gun := args[0]
 
-	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, true), retriever)
+	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, true), retriever, false)
 	if err != nil {
 		fatalf(err.Error())
 	}
@@ -182,7 +182,7 @@ func tufLookup(cmd *cobra.Command, args []string) {
 	gun := args[0]
 	targetName := args[1]
 
-	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, true), retriever)
+	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, true), retriever, false)
 	if err != nil {
 		fatalf(err.Error())
 	}
@@ -204,7 +204,7 @@ func tufStatus(cmd *cobra.Command, args []string) {
 	parseConfig()
 	gun := args[0]
 
-	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), nil, retriever)
+	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), nil, retriever, false)
 	if err != nil {
 		fatalf(err.Error())
 	}
@@ -238,7 +238,7 @@ func tufPublish(cmd *cobra.Command, args []string) {
 
 	cmd.Println("Pushing changes to", gun)
 
-	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, false), retriever)
+	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, false), retriever, false)
 	if err != nil {
 		fatalf(err.Error())
 	}
@@ -261,7 +261,7 @@ func tufRemove(cmd *cobra.Command, args []string) {
 
 	// no online operation are performed by remove so the transport argument
 	// should be nil.
-	repo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), nil, retriever)
+	repo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), nil, retriever, false)
 	if err != nil {
 		fatalf(err.Error())
 	}
@@ -289,7 +289,7 @@ func verify(cmd *cobra.Command, args []string) {
 
 	gun := args[0]
 	targetName := args[1]
-	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, true), retriever)
+	nRepo, err := notaryclient.NewNotaryRepository(mainViper.GetString("trust_dir"), gun, getRemoteTrustServer(mainViper), getTransport(mainViper, gun, true), retriever, false)
 	if err != nil {
 		fatalf(err.Error())
 	}

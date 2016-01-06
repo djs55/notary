@@ -91,9 +91,9 @@ type NotaryRepository struct {
 // takes some basic NotaryRepository parameters as well as keystores (in order
 // of usage preference), and returns a NotaryRepository.
 func repositoryFromKeystores(baseDir, gun, baseURL string, rt http.RoundTripper,
-	keyStores []trustmanager.KeyStore) (*NotaryRepository, error) {
+	keyStores []trustmanager.KeyStore, stateless bool) (*NotaryRepository, error) {
 
-	certManager, err := certs.NewManager(baseDir)
+	certManager, err := certs.NewManager(baseDir, stateless)
 	if err != nil {
 		return nil, err
 	}
@@ -109,17 +109,22 @@ func repositoryFromKeystores(baseDir, gun, baseURL string, rt http.RoundTripper,
 		roundTrip:     rt,
 		CertManager:   certManager,
 	}
-
-	fileStore, err := store.NewFilesystemStore(
-		nRepo.tufRepoPath,
-		"metadata",
-		"json",
-		"",
-	)
-	if err != nil {
-		return nil, err
+	// If the client is in stateless mode, use a memory store for files
+	if stateless {
+		memStore := store.NewMemoryStore(nil, nil)
+		nRepo.fileStore = memStore
+	} else {
+		fileStore, err := store.NewFilesystemStore(
+			nRepo.tufRepoPath,
+			"metadata",
+			"json",
+			"",
+		)
+		if err != nil {
+			return nil, err
+		}
+		nRepo.fileStore = fileStore
 	}
-	nRepo.fileStore = fileStore
 
 	return nRepo, nil
 }
@@ -307,6 +312,7 @@ func addChange(cl *changelist.FileChangelist, c changelist.Change, roles ...stri
 // when the changelist gets applied at publish time.  This does not do any validation
 // other than checking the name of the delegation to add - all that will happen
 // at publish time.
+// // TODO(riyazdf): how to handle changelist in mem?  Do I even have to?
 func (r *NotaryRepository) AddDelegation(name string, threshold int,
 	delegationKeys []data.PublicKey, paths []string) error {
 

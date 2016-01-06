@@ -109,7 +109,7 @@ func initializeRepo(t *testing.T, rootType, gun, url string,
 		serverManagedRoles = []string{data.CanonicalSnapshotRole}
 	}
 
-	repo, rootPubKeyID := createRepoAndKey(t, rootType, tempBaseDir, gun, url)
+	repo, rootPubKeyID := createRepoAndKey(t, rootType, tempBaseDir, gun, url, false)
 
 	err = repo.Initialize(rootPubKeyID, serverManagedRoles...)
 	assert.NoError(t, err, "error creating repository: %s", err)
@@ -120,12 +120,30 @@ func initializeRepo(t *testing.T, rootType, gun, url string,
 	return repo, rootPubKeyID
 }
 
+// Initializes a repository without a filestore
+func initializeStatelessRepo(t *testing.T, rootType, gun, url string,
+serverManagesSnapshot bool) (*NotaryRepository, string) {
+
+	serverManagedRoles := []string{}
+	if serverManagesSnapshot {
+		serverManagedRoles = []string{data.CanonicalSnapshotRole}
+	}
+
+	// Temporary directory that will not be used for TUF or cert files, pass empty string
+	repo, rootPubKeyID := createRepoAndKey(t, rootType, "", gun, url, true)
+
+	err := repo.Initialize(rootPubKeyID, serverManagedRoles...)
+	assert.NoError(t, err, "error creating repository: %s", err)
+
+	return repo, rootPubKeyID
+}
+
 // Creates a new repository and adds a root key.  Returns the repo and key ID.
-func createRepoAndKey(t *testing.T, rootType, tempBaseDir, gun, url string) (
+func createRepoAndKey(t *testing.T, rootType, tempBaseDir, gun, url string, stateless bool) (
 	*NotaryRepository, string) {
 
 	repo, err := NewNotaryRepository(
-		tempBaseDir, gun, url, http.DefaultTransport, passphraseRetriever)
+		tempBaseDir, gun, url, http.DefaultTransport, passphraseRetriever, stateless)
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	rootPubKey, err := repo.CryptoService.Create("root", rootType)
@@ -142,7 +160,7 @@ func newRepoToTestRepo(t *testing.T, existingRepo *NotaryRepository) *NotaryRepo
 
 	repo, err := NewNotaryRepository(
 		tempBaseDir, existingRepo.gun, existingRepo.baseURL,
-		http.DefaultTransport, passphraseRetriever)
+		http.DefaultTransport, passphraseRetriever, false)
 	assert.NoError(t, err, "error creating repository: %s", err)
 	if err != nil {
 		defer os.RemoveAll(tempBaseDir)
@@ -160,13 +178,28 @@ func TestInitRepositoryManagedRolesIncludingRoot(t *testing.T) {
 	defer os.RemoveAll(tempBaseDir)
 
 	repo, rootPubKeyID := createRepoAndKey(
-		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", "http://localhost")
+		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", "http://localhost", false)
 	err = repo.Initialize(rootPubKeyID, data.CanonicalRootRole)
 	assert.Error(t, err)
 	assert.IsType(t, ErrInvalidRemoteRole{}, err)
 	// Just testing the error message here in this one case
 	assert.Equal(t, err.Error(),
 		"notary does not support the server managing the root key")
+}
+
+// Initializing a new stateless repo while specifying that the server should manage the root
+// role will fail.
+func TestInitStatelessRepositoryManagedRolesIncludingRoot(t *testing.T) {
+	repo, rootPubKeyID := createRepoAndKey(
+		t, data.ECDSAKey, "nonexistent", "docker.com/notary", "http://localhost", true)
+	err := repo.Initialize(rootPubKeyID, data.CanonicalRootRole)
+	assert.Error(t, err)
+	assert.IsType(t, ErrInvalidRemoteRole{}, err)
+	// Just testing the error message here in this one case
+	assert.Equal(t, err.Error(),
+		"notary does not support the server managing the root key")
+	_, err = os.Stat("nonexistent")
+	assert.Error(t, err)
 }
 
 // Initializing a new repo while specifying that the server should manage some
@@ -178,10 +211,22 @@ func TestInitRepositoryManagedRolesInvalidRole(t *testing.T) {
 	defer os.RemoveAll(tempBaseDir)
 
 	repo, rootPubKeyID := createRepoAndKey(
-		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", "http://localhost")
+		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", "http://localhost", false)
 	err = repo.Initialize(rootPubKeyID, "randomrole")
 	assert.Error(t, err)
 	assert.IsType(t, ErrInvalidRemoteRole{}, err)
+}
+
+// Initializing a new stateless repo while specifying that the server should manage some
+// invalid role will fail.
+func TestInitStatelessRepositoryManagedRolesInvalidRole(t *testing.T) {
+	repo, rootPubKeyID := createRepoAndKey(
+		t, data.ECDSAKey, "nonexistent", "docker.com/notary", "http://localhost", true)
+	err := repo.Initialize(rootPubKeyID, "randomrole")
+	assert.Error(t, err)
+	assert.IsType(t, ErrInvalidRemoteRole{}, err)
+	_, err = os.Stat("nonexistent")
+	assert.Error(t, err)
 }
 
 // Initializing a new repo while specifying that the server should manage the
@@ -193,10 +238,22 @@ func TestInitRepositoryManagedRolesIncludingTargets(t *testing.T) {
 	defer os.RemoveAll(tempBaseDir)
 
 	repo, rootPubKeyID := createRepoAndKey(
-		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", "http://localhost")
+		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", "http://localhost", false)
 	err = repo.Initialize(rootPubKeyID, data.CanonicalTargetsRole)
 	assert.Error(t, err)
 	assert.IsType(t, ErrInvalidRemoteRole{}, err)
+}
+
+// Initializing a new stateless repo while specifying that the server should manage the
+// targets role will fail.
+func TestInitStatelessRepositoryManagedRolesIncludingTargets(t *testing.T) {
+	repo, rootPubKeyID := createRepoAndKey(
+		t, data.ECDSAKey, "nonexistent", "docker.com/notary", "http://localhost", true)
+	err := repo.Initialize(rootPubKeyID, data.CanonicalTargetsRole)
+	assert.Error(t, err)
+	assert.IsType(t, ErrInvalidRemoteRole{}, err)
+	_, err = os.Stat("nonexistent")
+	assert.Error(t, err)
 }
 
 // Initializing a new repo while specifying that the server should manage the
@@ -211,9 +268,25 @@ func TestInitRepositoryManagedRolesIncludingTimestamp(t *testing.T) {
 	defer ts.Close()
 
 	repo, rootPubKeyID := createRepoAndKey(
-		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", ts.URL)
+		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", ts.URL, false)
 	err = repo.Initialize(rootPubKeyID, data.CanonicalTimestampRole)
 	assert.NoError(t, err)
+	_, err = os.Stat("nonexistent")
+	assert.Error(t, err)
+}
+
+// Initializing a new stateless repo while specifying that the server should manage the
+// timestamp key is fine - that's what it already does, so no error.
+func TestInitStatelessRepositoryManagedRolesIncludingTimestamp(t *testing.T) {
+	ts, _, _ := simpleTestServer(t)
+	defer ts.Close()
+
+	repo, rootPubKeyID := createRepoAndKey(
+		t, data.ECDSAKey, "nonexistent", "docker.com/notary", ts.URL, true)
+	err := repo.Initialize(rootPubKeyID, data.CanonicalTimestampRole)
+	assert.NoError(t, err)
+	_, err = os.Stat("nonexistent")
+	assert.Error(t, err)
 }
 
 // Initializing a new repo fails if unable to get the timestamp key, even if
@@ -228,10 +301,25 @@ func TestInitRepositoryNeedsRemoteTimestampKey(t *testing.T) {
 	defer ts.Close()
 
 	repo, rootPubKeyID := createRepoAndKey(
-		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", ts.URL)
+		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", ts.URL, false)
 	err = repo.Initialize(rootPubKeyID, data.CanonicalTimestampRole)
 	assert.Error(t, err)
 	assert.IsType(t, store.ErrMetaNotFound{}, err)
+}
+
+// Initializing a new stateless repo fails if unable to get the timestamp key, even if
+// the snapshot key is available
+func TestInitStatelessRepositoryNeedsRemoteTimestampKey(t *testing.T) {
+	ts, _, _ := simpleTestServer(t, data.CanonicalSnapshotRole)
+	defer ts.Close()
+
+	repo, rootPubKeyID := createRepoAndKey(
+		t, data.ECDSAKey, "nonexistent", "docker.com/notary", ts.URL, true)
+	err := repo.Initialize(rootPubKeyID, data.CanonicalTimestampRole)
+	assert.Error(t, err)
+	assert.IsType(t, store.ErrMetaNotFound{}, err)
+	_, err = os.Stat("nonexistent")
+	assert.Error(t, err)
 }
 
 // Initializing a new repo with remote server signing fails if unable to get
@@ -246,10 +334,26 @@ func TestInitRepositoryNeedsRemoteSnapshotKey(t *testing.T) {
 	defer ts.Close()
 
 	repo, rootPubKeyID := createRepoAndKey(
-		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", ts.URL)
+		t, data.ECDSAKey, tempBaseDir, "docker.com/notary", ts.URL, false)
 	err = repo.Initialize(rootPubKeyID, data.CanonicalSnapshotRole)
 	assert.Error(t, err)
 	assert.IsType(t, store.ErrMetaNotFound{}, err)
+}
+
+
+// Initializing a new stateless repo with remote server signing fails if unable to get
+// the snapshot key, even if the timestamp key is available
+func TestInitStatelessRepositoryNeedsRemoteSnapshotKey(t *testing.T) {
+	ts, _, _ := simpleTestServer(t, data.CanonicalTimestampRole)
+	defer ts.Close()
+
+	repo, rootPubKeyID := createRepoAndKey(
+		t, data.ECDSAKey, "nonexistent", "docker.com/notary", ts.URL, true)
+	err := repo.Initialize(rootPubKeyID, data.CanonicalSnapshotRole)
+	assert.Error(t, err)
+	assert.IsType(t, store.ErrMetaNotFound{}, err)
+	_, err = os.Stat("nonexistent")
+	assert.Error(t, err)
 }
 
 // passing timestamp + snapshot, or just snapshot, is tested in the next two
@@ -280,6 +384,7 @@ func TestInitRepoServerManagesTimestampAndSnapshotKeys(t *testing.T) {
 
 // This creates a new KeyFileStore in the repo's base directory and makes sure
 // the repo has the right number of keys
+// TODO(riyazdf): make memstore equiv
 func assertRepoHasExpectedKeys(t *testing.T, repo *NotaryRepository,
 	rootKeyID string, expectedSnapshotKey bool) {
 
@@ -326,11 +431,11 @@ func assertRepoHasExpectedKeys(t *testing.T, repo *NotaryRepository,
 
 // This creates a new certificate manager in the repo's base directory and
 // makes sure the repo has the right certificates
-func assertRepoHasExpectedCerts(t *testing.T, repo *NotaryRepository) {
+func assertRepoHasExpectedCerts(t *testing.T, repo *NotaryRepository, stateless bool) {
 	// The repo should have a certificate manager and have created certs using
 	// it, so create a new manager, and check that the certs do exist and
 	// are valid
-	certManager, err := certs.NewManager(repo.baseDir)
+	certManager, err := certs.NewManager(repo.baseDir, stateless)
 	assert.NoError(t, err)
 	certificates := certManager.TrustedCertificateStore().GetCertificates()
 	assert.Len(t, certificates, 1, "unexpected number of trusted certificates")
@@ -344,6 +449,7 @@ func assertRepoHasExpectedCerts(t *testing.T, repo *NotaryRepository) {
 // role, the JSON is well-formed, and the signatures exist.
 // For the root.json file, also check that the root, snapshot, and
 // targets key IDs are present.
+// TODO(riyazdf): make memstore equiv
 func assertRepoHasExpectedMetadata(t *testing.T, repo *NotaryRepository,
 	role string, expected bool) {
 
@@ -410,12 +516,28 @@ func testInitRepo(t *testing.T, rootType string, serverManagesSnapshot bool) {
 	defer os.RemoveAll(repo.baseDir)
 
 	assertRepoHasExpectedKeys(t, repo, rootKeyID, !serverManagesSnapshot)
-	assertRepoHasExpectedCerts(t, repo)
+	assertRepoHasExpectedCerts(t, repo, false)
 	assertRepoHasExpectedMetadata(t, repo, data.CanonicalRootRole, true)
 	assertRepoHasExpectedMetadata(t, repo, data.CanonicalTargetsRole, true)
 	assertRepoHasExpectedMetadata(t, repo, data.CanonicalSnapshotRole,
 		!serverManagesSnapshot)
 }
+// TODO(riyazdf): test this after making memstore equivs
+// Tests a successful initialization of a stateless repository, where all TUF files are in a memory store
+//func testInitStatelessRepo(t *testing.T, rootType string, serverManagesSnapshot bool) {
+//	gun := "docker.com/notary"
+//
+//	ts, _, _ := simpleTestServer(t)
+//	defer ts.Close()
+//
+//	repo, rootKeyID := initializeStatelessRepo(t, rootType, gun, ts.URL, serverManagesSnapshot)
+//	assertRepoHasExpectedKeys(t, repo, rootKeyID, !serverManagesSnapshot)
+//	assertRepoHasExpectedCerts(t, repo, true)
+//	assertRepoHasExpectedMetadata(t, repo, data.CanonicalRootRole, true)
+//	assertRepoHasExpectedMetadata(t, repo, data.CanonicalTargetsRole, true)
+//	assertRepoHasExpectedMetadata(t, repo, data.CanonicalSnapshotRole,
+//		!serverManagesSnapshot)
+//}
 
 // TestInitRepoAttemptsExceeded tests error handling when passphrase.Retriever
 // (or rather the user) insists on an incorrect password.
@@ -437,7 +559,7 @@ func testInitRepoAttemptsExceeded(t *testing.T, rootType string) {
 	defer ts.Close()
 
 	retriever := passphrase.ConstantRetriever("password")
-	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever)
+	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 	rootPubKey, err := repo.CryptoService.Create("root", rootType)
 	assert.NoError(t, err, "error generating root key: %s", err)
@@ -445,7 +567,7 @@ func testInitRepoAttemptsExceeded(t *testing.T, rootType string) {
 	retriever = passphrase.ConstantRetriever("incorrect password")
 	// repo.CryptoService’s FileKeyStore caches the unlocked private key, so to test
 	// private key unlocking we need a new repo instance.
-	repo, err = NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever)
+	repo, err = NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 	err = repo.Initialize(rootPubKey.ID())
 	assert.EqualError(t, err, trustmanager.ErrAttemptsExceeded{}.Error())
@@ -475,14 +597,14 @@ func testInitRepoPasswordInvalid(t *testing.T, rootType string) {
 	defer ts.Close()
 
 	retriever := passphrase.ConstantRetriever("password")
-	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever)
+	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 	rootPubKey, err := repo.CryptoService.Create("root", rootType)
 	assert.NoError(t, err, "error generating root key: %s", err)
 
 	// repo.CryptoService’s FileKeyStore caches the unlocked private key, so to test
 	// private key unlocking we need a new repo instance.
-	repo, err = NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, giveUpPassphraseRetriever)
+	repo, err = NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, giveUpPassphraseRetriever, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 	err = repo.Initialize(rootPubKey.ID())
 	assert.EqualError(t, err, trustmanager.ErrPasswordInvalid{}.Error())
@@ -1193,7 +1315,7 @@ func TestPublishUninitializedRepo(t *testing.T) {
 	defer os.RemoveAll(tempBaseDir)
 
 	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL,
-		http.DefaultTransport, passphraseRetriever)
+		http.DefaultTransport, passphraseRetriever, false)
 	assert.NoError(t, err, "error creating repository: %s", err)
 	err = repo.Publish()
 	assert.Error(t, err)
@@ -1510,7 +1632,7 @@ func TestNotInitializedOnPublish(t *testing.T) {
 	ts := fullTestServer(t)
 	defer ts.Close()
 
-	repo, _ := createRepoAndKey(t, data.ECDSAKey, tempBaseDir, gun, ts.URL)
+	repo, _ := createRepoAndKey(t, data.ECDSAKey, tempBaseDir, gun, ts.URL, false)
 
 	addTarget(t, repo, "v1", "../fixtures/intermediate-ca.crt")
 
@@ -1542,7 +1664,7 @@ func TestPublishSnapshotLocalKeysCreatedFirst(t *testing.T) {
 	defer ts.Close()
 
 	repo, err := NewNotaryRepository(
-		tempBaseDir, gun, ts.URL, http.DefaultTransport, passphraseRetriever)
+		tempBaseDir, gun, ts.URL, http.DefaultTransport, passphraseRetriever, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	cs := cryptoservice.NewCryptoService(gun,
@@ -2225,7 +2347,7 @@ func TestRemoteServerUnavailableNoLocalCache(t *testing.T) {
 	defer ts.Close()
 
 	repo, err := NewNotaryRepository(tempBaseDir, "docker.com/notary",
-		ts.URL, http.DefaultTransport, passphraseRetriever)
+		ts.URL, http.DefaultTransport, passphraseRetriever, false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	_, err = repo.ListTargets(data.CanonicalTargetsRole)

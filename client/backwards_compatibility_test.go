@@ -73,7 +73,7 @@ func Test0Dot1RepoFormat(t *testing.T) {
 	defer ts.Close()
 
 	repo, err := NewNotaryRepository(tmpDir, gun, ts.URL, http.DefaultTransport,
-		passphrase.ConstantRetriever(passwd))
+		passphrase.ConstantRetriever(passwd), false)
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	// rotate the timestamp key, since the server doesn't have that one
