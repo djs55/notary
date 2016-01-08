@@ -124,9 +124,20 @@ func CreateTimestamp(gun string, prev *data.SignedTimestamp, snapshot []byte, st
 		// couldn't parse snapshot
 		return nil, 0, err
 	}
-	ts, err := data.NewTimestamp(sn)
+	snapshotMeta, err := data.NewFileMeta(bytes.NewReader(snapshot), "sha256")
 	if err != nil {
 		return nil, 0, err
+	}
+	ts := &data.SignedTimestamp{
+		Signatures: make([]data.Signature, 0),
+		Signed: data.Timestamp{
+			Type:    data.TUFTypes["timestamp"],
+			Version: 0,
+			Expires: data.DefaultExpires("timestamp"),
+			Meta: data.Files{
+				data.CanonicalSnapshotRole: snapshotMeta,
+			},
+		},
 	}
 	if prev != nil {
 		ts.Signed.Version = prev.Signed.Version + 1
