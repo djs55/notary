@@ -682,16 +682,21 @@ func (tr *Repo) SignTargets(role string, expires time.Time) (*data.Signed, error
 // SignSnapshot updates the snapshot based on the current targets and root then signs it
 func (tr *Repo) SignSnapshot(expires time.Time) (*data.Signed, error) {
 	logrus.Debug("signing snapshot...")
-	signedRoot, err := tr.Root.ToSigned()
-	if err != nil {
-		return nil, err
+	if tr.Root.Dirty {
+		signedRoot, err := tr.Root.ToSigned()
+		if err != nil {
+			return nil, err
+		}
+		err = tr.UpdateSnapshot("root", signedRoot)
+		if err != nil {
+			return nil, err
+		}
+		tr.Root.Dirty = false // root dirty until changes captures in snapshot
 	}
-	err = tr.UpdateSnapshot("root", signedRoot)
-	if err != nil {
-		return nil, err
-	}
-	tr.Root.Dirty = false // root dirty until changes captures in snapshot
 	for role, targets := range tr.Targets {
+		if !targets.Dirty {
+			continue
+		}
 		signedTargets, err := targets.ToSigned()
 		if err != nil {
 			return nil, err
@@ -720,13 +725,15 @@ func (tr *Repo) SignSnapshot(expires time.Time) (*data.Signed, error) {
 // SignTimestamp updates the timestamp based on the current snapshot then signs it
 func (tr *Repo) SignTimestamp(expires time.Time) (*data.Signed, error) {
 	logrus.Debug("SignTimestamp")
-	signedSnapshot, err := tr.Snapshot.ToSigned()
-	if err != nil {
-		return nil, err
-	}
-	err = tr.UpdateTimestamp(signedSnapshot)
-	if err != nil {
-		return nil, err
+	if tr.Snapshot.Dirty {
+		signedSnapshot, err := tr.Snapshot.ToSigned()
+		if err != nil {
+			return nil, err
+		}
+		err = tr.UpdateTimestamp(signedSnapshot)
+		if err != nil {
+			return nil, err
+		}
 	}
 	tr.Timestamp.Signed.Expires = expires
 	tr.Timestamp.Signed.Version++
