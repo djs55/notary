@@ -68,11 +68,9 @@ func TestGetPassphraseForCreatingDelegationKey(t *testing.T) {
 	assert.Equal(t, expectedText, lines)
 }
 
-// PromptRetrieverWithInOut, if asked for root, targets, delegation, and
-// snapshot passphrases in that order will only prompt for root, targets, and
-// delegation passphrases because it caches the targets password and uses it
-// for snapshot.
-func TestGetRootTargetsDelegation(t *testing.T) {
+// PromptRetrieverWithInOut, if asked for root, targets, snapshot, and delegation
+// passphrases in that order will cache each of the keys except for the delegation key
+func TestRolePromptingAndCaching(t *testing.T) {
 	var in bytes.Buffer
 	var out bytes.Buffer
 
@@ -80,16 +78,32 @@ func TestGetRootTargetsDelegation(t *testing.T) {
 
 	assertAskOnceForKey(t, &in, &out, retriever, "rootpassword", data.CanonicalRootRole)
 	assertAskOnceForKey(t, &in, &out, retriever, "targetspassword", data.CanonicalTargetsRole)
+	assertAskOnceForKey(t, &in, &out, retriever, "snapshotpassword", data.CanonicalSnapshotRole)
 	assertAskOnceForKey(t, &in, &out, retriever, "delegationpass", "targets/delegation")
 
-	// now ask for snapshot password, but it should already be cached, it
-	// won't ask and  no input necessary.
-	pass, giveUp, err := retriever("repo/0123456789abcdef", data.CanonicalSnapshotRole, false, 0)
+	// ask for root password, but it should already be cached
+	pass, giveUp, err := retriever("repo/0123456789abcdef", data.CanonicalRootRole, false, 0)
+	assert.NoError(t, err)
+	assert.False(t, giveUp)
+	assert.Equal(t, "rootpassword", pass)
+
+	// ask for targets password, but it should already be cached
+	pass, giveUp, err = retriever("repo/0123456789abcdef", data.CanonicalTargetsRole, false, 0)
 	assert.NoError(t, err)
 	assert.False(t, giveUp)
 	assert.Equal(t, "targetspassword", pass)
 
+	// ask for snapshot password, but it should already be cached
+	pass, giveUp, err = retriever("repo/0123456789abcdef", data.CanonicalSnapshotRole, false, 0)
+	assert.NoError(t, err)
+	assert.False(t, giveUp)
+	assert.Equal(t, "snapshotpassword", pass)
+
+	// ask for delegation password, which should not be cached
+	pass, giveUp, err = retriever("repo/0123456789abcdef", "targets/delegation", false, 0)
+	assert.Error(t, err)
+
 	text, err := ioutil.ReadAll(&out)
 	assert.NoError(t, err)
-	assert.Empty(t, text)
+	assert.Contains(t, string(text), "Enter passphrase for targets/delegation key with ID 0123456 (repo):")
 }
