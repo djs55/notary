@@ -99,11 +99,16 @@ func TestRolePromptingAndCaching(t *testing.T) {
 	assert.False(t, giveUp)
 	assert.Equal(t, "snapshotpassword", pass)
 
-	// ask for delegation password, which should not be cached
+	// ask for targets/delegation password, but it should also be cached
 	pass, giveUp, err = retriever("repo/0123456789abcdef", "targets/delegation", false, 0)
-	assert.Error(t, err)
+	assert.NoError(t, err)
+	assert.False(t, giveUp)
+	assert.Equal(t, "delegationpass", pass)
 
+	// ask for different delegation password, which should not be cached
+	pass, giveUp, err = retriever("repo/0123456789abcdef", "targets/delegation/new", false, 0)
+	assert.Error(t, err)
 	text, err := ioutil.ReadAll(&out)
 	assert.NoError(t, err)
-	assert.Contains(t, string(text), "Enter passphrase for targets/delegation key with ID 0123456 (repo):")
+	assert.Contains(t, string(text), "Enter passphrase for targets/delegation/new key with ID 0123456 (repo):")
 }
