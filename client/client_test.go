@@ -1024,13 +1024,10 @@ func fakeServerData(t *testing.T, repo *NotaryRepository, mux *http.ServeMux,
 
 	timestampKey, ok := keys[data.CanonicalTimestampRole]
 	assert.True(t, ok)
-	savedTUFRepo := repo.tufRepo // in case this is overwritten
+	// Add timestamp key via the server's cryptoservice so it can sign
+	repo.CryptoService.AddKey(data.CanonicalTimestampRole, timestampKey)
 
-	fileStore, err := trustmanager.NewKeyFileStore(repo.baseDir, passphraseRetriever)
-	assert.NoError(t, err)
-	fileStore.AddKey(
-		filepath.Join(filepath.FromSlash(repo.gun), timestampKey.ID()),
-		"nonroot", timestampKey)
+	savedTUFRepo := repo.tufRepo // in case this is overwritten
 
 	rootJSONFile := filepath.Join(repo.baseDir, "tuf",
 		filepath.FromSlash(repo.gun), "metadata", "root.json")
