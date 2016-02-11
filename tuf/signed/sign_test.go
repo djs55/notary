@@ -34,6 +34,10 @@ func (mts *FailingCryptoService) ListKeys(role string) []string {
 	return []string{mts.testKey.ID()}
 }
 
+func (mts *FailingCryptoService) AddKey(role string, key data.PrivateKey) error {
+	return nil
+}
+
 func (mts *FailingCryptoService) ListAllKeys() map[string]string {
 	return map[string]string{
 		mts.testKey.ID(): "root",
@@ -79,6 +83,10 @@ func (mts *MockCryptoService) Sign(keyIDs []string, _ []byte) ([]data.Signature,
 
 func (mts *MockCryptoService) Create(_ string, _ string) (data.PublicKey, error) {
 	return mts.testKey, nil
+}
+
+func (mts *MockCryptoService) AddKey(role string, key data.PrivateKey) error {
+	return nil
 }
 
 func (mts *MockCryptoService) GetKey(keyID string) data.PublicKey {
@@ -147,6 +155,10 @@ func (mts *StrictMockCryptoService) ListAllKeys() map[string]string {
 		mts.testKey.ID(): "snapshot",
 		mts.testKey.ID(): "timestamp",
 	}
+}
+
+func (mts *StrictMockCryptoService) AddKey(role string, key data.PrivateKey) error {
+	return nil
 }
 
 func (mts *StrictMockCryptoService) ImportRootKey(r io.Reader) error {
