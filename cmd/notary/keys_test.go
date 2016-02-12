@@ -43,7 +43,7 @@ func TestRemoveOneKeyAbort(t *testing.T) {
 
 	key, err := trustmanager.GenerateED25519Key(rand.Reader)
 	assert.NoError(t, err)
-	err = store.AddKey(key.ID(), "root", key)
+	err = store.AddKey(key, trustmanager.KeyInfo{Role: data.CanonicalRootRole, Gun: ""})
 	assert.NoError(t, err)
 
 	stores := []trustmanager.KeyStore{store}
@@ -74,7 +74,7 @@ func TestRemoveOneKeyConfirm(t *testing.T) {
 
 		key, err := trustmanager.GenerateED25519Key(rand.Reader)
 		assert.NoError(t, err)
-		err = store.AddKey(key.ID(), "root", key)
+		err = store.AddKey(key, trustmanager.KeyInfo{Role: data.CanonicalRootRole, Gun: ""})
 		assert.NoError(t, err)
 
 		var out bytes.Buffer
@@ -107,10 +107,10 @@ func TestRemoveMultikeysInvalidInput(t *testing.T) {
 		trustmanager.NewKeyMemoryStore(ret),
 	}
 
-	err = stores[0].AddKey(key.ID(), "root", key)
+	err = stores[0].AddKey(key, trustmanager.KeyInfo{Role: data.CanonicalRootRole, Gun: ""})
 	assert.NoError(t, err)
 
-	err = stores[1].AddKey("gun/"+key.ID(), "target", key)
+	err = stores[1].AddKey(key, trustmanager.KeyInfo{Role: data.CanonicalTargetsRole, Gun: "gun"})
 	assert.NoError(t, err)
 
 	var out bytes.Buffer
@@ -155,10 +155,10 @@ func TestRemoveMultikeysAbortChoice(t *testing.T) {
 		trustmanager.NewKeyMemoryStore(ret),
 	}
 
-	err = stores[0].AddKey(key.ID(), "root", key)
+	err = stores[0].AddKey(key, trustmanager.KeyInfo{Role: data.CanonicalRootRole, Gun: ""})
 	assert.NoError(t, err)
 
-	err = stores[1].AddKey("gun/"+key.ID(), "target", key)
+	err = stores[1].AddKey(key, trustmanager.KeyInfo{Role: data.CanonicalTargetsRole, Gun: "gun"})
 	assert.NoError(t, err)
 
 	var out bytes.Buffer
@@ -193,10 +193,10 @@ func TestRemoveMultikeysRemoveOnlyChosenKey(t *testing.T) {
 		trustmanager.NewKeyMemoryStore(ret),
 	}
 
-	err = stores[0].AddKey(key.ID(), "root", key)
+	err = stores[0].AddKey(key, trustmanager.KeyInfo{Role: data.CanonicalRootRole, Gun: ""})
 	assert.NoError(t, err)
 
-	err = stores[1].AddKey("gun/"+key.ID(), "target", key)
+	err = stores[1].AddKey(key, trustmanager.KeyInfo{Role: data.CanonicalTargetsRole, Gun: "gun"})
 	assert.NoError(t, err)
 
 	var out bytes.Buffer
