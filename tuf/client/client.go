@@ -28,10 +28,11 @@ type Client struct {
 // NewClient initialized a Client with the given repo, remote source of content, key database, and cache
 func NewClient(local *tuf.Repo, remote store.RemoteStore, keysDB *keys.KeyDB, cache store.MetadataStore) *Client {
 	return &Client{
-		local:  local,
-		remote: remote,
-		keysDB: keysDB,
-		cache:  cache,
+		local:   local,
+		remote:  remote,
+		keysDB:  keysDB,
+		cache:   cache,
+		builder: NewRepoBuilder(keysDB),
 	}
 }
 
@@ -94,8 +95,8 @@ func (c *Client) update() error {
 // there is little expectation that the situation can be remedied.
 func (c Client) checkRoot() error {
 	role := data.CanonicalRootRole
-	size := c.local.Snapshot.Signed.Meta[role].Length
-	hashSha256 := c.local.Snapshot.Signed.Meta[role].Hashes["sha256"]
+	size := c.local.Snapshot().Signed.Meta[role].Length
+	hashSha256 := c.local.Snapshot().Signed.Meta[role].Hashes["sha256"]
 
 	raw, err := c.cache.GetMeta("root", size)
 	if err != nil {
@@ -132,8 +133,8 @@ func (c *Client) loadRoot() error {
 	var size int64 = -1
 	var expectedSha256 []byte
 	if c.local.Snapshot != nil {
-		size = c.local.Snapshot.Signed.Meta[role].Length
-		expectedSha256 = c.local.Snapshot.Signed.Meta[role].Hashes["sha256"]
+		size = c.local.Snapshot().Signed.Meta[role].Length
+		expectedSha256 = c.local.Snapshot().Signed.Meta[role].Hashes["sha256"]
 	}
 
 	// if we're bootstrapping we may not have a cached root, an
@@ -320,8 +321,8 @@ func (c *Client) loadSnapshot() error {
 	if c.local.Timestamp == nil {
 		return ErrMissingMeta{role: "snapshot"}
 	}
-	size := c.local.Timestamp.Signed.Meta[role].Length
-	expectedSha256, ok := c.local.Timestamp.Signed.Meta[role].Hashes["sha256"]
+	size := c.local.Timestamp().Signed.Meta[role].Length
+	expectedSha256, ok := c.local.Timestamp().Signed.Meta[role].Hashes["sha256"]
 	if !ok {
 		return ErrMissingMeta{role: "snapshot"}
 	}
@@ -404,8 +405,8 @@ func (c *Client) loadTargets(role string) error {
 		if c.local.Snapshot == nil {
 			return ErrMissingMeta{role: role}
 		}
-		snap := c.local.Snapshot.Signed
-		root := c.local.Root.Signed
+		snap := c.local.Snapshot().Signed
+		root := c.local.Root().Signed
 		r := c.keysDB.GetRole(role)
 		if r == nil {
 			return fmt.Errorf("Invalid role: %s", role)

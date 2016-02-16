@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"strings"
 	"time"
 
 	"github.com/Sirupsen/logrus"
@@ -55,10 +54,10 @@ func (err ErrNotLoaded) Error() string {
 // fetching raw JSON and using the Set* functions to populate
 // the Repo instance.
 type Repo struct {
-	Root          *data.SignedRoot
-	Targets       map[string]*data.SignedTargets
-	Snapshot      *data.SignedSnapshot
-	Timestamp     *data.SignedTimestamp
+	root          *data.SignedRoot
+	targets       map[string]*data.SignedTargets
+	snapshot      *data.SignedSnapshot
+	timestamp     *data.SignedTimestamp
 	keysDB        *keys.KeyDB
 	cryptoService signed.CryptoService
 }
@@ -67,29 +66,45 @@ type Repo struct {
 // If the Repo will only be used for reading, the signer should be nil.
 func NewRepo(keysDB *keys.KeyDB, cryptoService signed.CryptoService) *Repo {
 	repo := &Repo{
-		Targets:       make(map[string]*data.SignedTargets),
+		targets:       make(map[string]*data.SignedTargets),
 		keysDB:        keysDB,
 		cryptoService: cryptoService,
 	}
 	return repo
 }
 
+func (tr *Repo) Root() *data.SignedRoot {
+	return tr.root
+}
+
+func (tr *Repo) Timestamp() *data.SignedTimestamp {
+	return tr.timestamp
+}
+
+func (tr *Repo) Snapshot() *data.SignedSnapshot {
+	return tr.snapshot
+}
+
+func (tr *Repo) Targets(role string) *data.SignedTargets {
+	return tr.targets[role]
+}
+
 // AddBaseKeys is used to add keys to the role in root.json
 func (tr *Repo) AddBaseKeys(role string, keys ...data.PublicKey) error {
-	if tr.Root == nil {
+	if tr.root == nil {
 		return ErrNotLoaded{role: "root"}
 	}
 	ids := []string{}
 	for _, k := range keys {
 		// Store only the public portion
-		tr.Root.Signed.Keys[k.ID()] = k
+		tr.root.Signed.Keys[k.ID()] = k
 		tr.keysDB.AddKey(k)
-		tr.Root.Signed.Roles[role].KeyIDs = append(tr.Root.Signed.Roles[role].KeyIDs, k.ID())
+		tr.root.Signed.Roles[role].KeyIDs = append(tr.root.Signed.Roles[role].KeyIDs, k.ID())
 		ids = append(ids, k.ID())
 	}
 	r, err := data.NewRole(
 		role,
-		tr.Root.Signed.Roles[role].Threshold,
+		tr.root.Signed.Roles[role].Threshold,
 		ids,
 		nil,
 		nil,
@@ -98,22 +113,22 @@ func (tr *Repo) AddBaseKeys(role string, keys ...data.PublicKey) error {
 		return err
 	}
 	tr.keysDB.AddRole(r)
-	tr.Root.Dirty = true
+	tr.root.Dirty = true
 
 	// also, whichever role was switched out needs to be re-signed
 	// root has already been marked dirty
 	switch role {
 	case data.CanonicalSnapshotRole:
-		if tr.Snapshot != nil {
-			tr.Snapshot.Dirty = true
+		if tr.snapshot != nil {
+			tr.snapshot.Dirty = true
 		}
 	case data.CanonicalTargetsRole:
-		if target, ok := tr.Targets[data.CanonicalTargetsRole]; ok {
+		if target, ok := tr.targets[data.CanonicalTargetsRole]; ok {
 			target.Dirty = true
 		}
 	case data.CanonicalTimestampRole:
-		if tr.Timestamp != nil {
-			tr.Timestamp.Dirty = true
+		if tr.timestamp != nil {
+			tr.timestamp.Dirty = true
 		}
 	}
 	return nil
@@ -131,7 +146,7 @@ func (tr *Repo) ReplaceBaseKeys(role string, keys ...data.PublicKey) error {
 
 // RemoveBaseKeys is used to remove keys from the roles in root.json
 func (tr *Repo) RemoveBaseKeys(role string, keyIDs ...string) error {
-	if tr.Root == nil {
+	if tr.root == nil {
 		return ErrNotLoaded{role: "root"}
 	}
 	var keep []string
@@ -139,16 +154,16 @@ func (tr *Repo) RemoveBaseKeys(role string, keyIDs ...string) error {
 	// remove keys from specified role
 	for _, k := range keyIDs {
 		toDelete[k] = struct{}{}
-		for _, rk := range tr.Root.Signed.Roles[role].KeyIDs {
+		for _, rk := range tr.root.Signed.Roles[role].KeyIDs {
 			if k != rk {
 				keep = append(keep, rk)
 			}
 		}
 	}
-	tr.Root.Signed.Roles[role].KeyIDs = keep
+	tr.root.Signed.Roles[role].KeyIDs = keep
 
 	// determine which keys are no longer in use by any roles
-	for roleName, r := range tr.Root.Signed.Roles {
+	for roleName, r := range tr.root.Signed.Roles {
 		if roleName == role {
 			continue
 		}
@@ -161,7 +176,7 @@ func (tr *Repo) RemoveBaseKeys(role string, keyIDs ...string) error {
 
 	// remove keys no longer in use by any roles
 	for k := range toDelete {
-		delete(tr.Root.Signed.Keys, k)
+		delete(tr.root.Signed.Keys, k)
 		// remove the signing key from the cryptoservice if it
 		// isn't a root key. Root keys must be kept for rotation
 		// signing
@@ -169,7 +184,7 @@ func (tr *Repo) RemoveBaseKeys(role string, keyIDs ...string) error {
 			tr.cryptoService.RemoveKey(k)
 		}
 	}
-	tr.Root.Dirty = true
+	tr.root.Dirty = true
 	return nil
 }
 
@@ -194,7 +209,7 @@ func (tr *Repo) GetDelegation(role string) (*data.Role, data.Keys, error) {
 	}
 
 	// check the parent role's metadata
-	p, ok := tr.Targets[parent]
+	p, ok := tr.targets[parent]
 	if !ok { // the parent targetfile may not exist yet, so it can't be in the list
 		return nil, nil, data.ErrNoSuchRole{Role: role}
 	}
@@ -226,7 +241,7 @@ func (tr *Repo) UpdateDelegations(role *data.Role, keys []data.PublicKey) error 
 	}
 
 	// check the parent role's metadata
-	p, ok := tr.Targets[parent]
+	p, ok := tr.targets[parent]
 	if !ok { // the parent targetfile may not exist yet - if not, then create it
 		var err error
 		p, err = tr.InitTargets(parent)
@@ -285,12 +300,12 @@ func (tr *Repo) DeleteDelegation(role data.Role) error {
 		return err
 	}
 
-	// delete delegated data from Targets map and Snapshot - if they don't
+	// delete delegated data from targets map and Snapshot - if they don't
 	// exist, these are no-op
-	delete(tr.Targets, name)
-	tr.Snapshot.DeleteMeta(name)
+	delete(tr.targets, name)
+	tr.snapshot.DeleteMeta(name)
 
-	p, ok := tr.Targets[parent]
+	p, ok := tr.targets[parent]
 	if !ok {
 		// if there is no parent metadata (the role exists though), then this
 		// is as good as done.
@@ -355,7 +370,7 @@ func (tr *Repo) InitRoot(consistent bool) error {
 	if err != nil {
 		return err
 	}
-	tr.Root = root
+	tr.root = root
 	return nil
 }
 
@@ -369,24 +384,24 @@ func (tr *Repo) InitTargets(role string) (*data.SignedTargets, error) {
 		}
 	}
 	targets := data.NewTargets()
-	tr.Targets[role] = targets
+	tr.targets[role] = targets
 	return targets, nil
 }
 
 // InitSnapshot initializes a snapshot based on the current root and targets
 func (tr *Repo) InitSnapshot() error {
-	if tr.Root == nil {
+	if tr.root == nil {
 		return ErrNotLoaded{role: "root"}
 	}
-	root, err := tr.Root.ToSigned()
+	root, err := tr.root.ToSigned()
 	if err != nil {
 		return err
 	}
 
-	if _, ok := tr.Targets[data.CanonicalTargetsRole]; !ok {
+	if _, ok := tr.targets[data.CanonicalTargetsRole]; !ok {
 		return ErrNotLoaded{role: "targets"}
 	}
-	targets, err := tr.Targets[data.CanonicalTargetsRole].ToSigned()
+	targets, err := tr.targets[data.CanonicalTargetsRole].ToSigned()
 	if err != nil {
 		return err
 	}
@@ -394,13 +409,13 @@ func (tr *Repo) InitSnapshot() error {
 	if err != nil {
 		return err
 	}
-	tr.Snapshot = snapshot
+	tr.snapshot = snapshot
 	return nil
 }
 
 // InitTimestamp initializes a timestamp based on the current snapshot
 func (tr *Repo) InitTimestamp() error {
-	snap, err := tr.Snapshot.ToSigned()
+	snap, err := tr.snapshot.ToSigned()
 	if err != nil {
 		return err
 	}
@@ -409,64 +424,7 @@ func (tr *Repo) InitTimestamp() error {
 		return err
 	}
 
-	tr.Timestamp = timestamp
-	return nil
-}
-
-// SetRoot parses the Signed object into a SignedRoot object, sets
-// the keys and roles in the KeyDB, and sets the Repo.Root field
-// to the SignedRoot object.
-func (tr *Repo) SetRoot(s *data.SignedRoot) error {
-	for _, key := range s.Signed.Keys {
-		logrus.Debug("Adding key ", key.ID())
-		tr.keysDB.AddKey(key)
-	}
-	for roleName, role := range s.Signed.Roles {
-		logrus.Debugf("Adding role %s with keys %s", roleName, strings.Join(role.KeyIDs, ","))
-		baseRole, err := data.NewRole(
-			roleName,
-			role.Threshold,
-			role.KeyIDs,
-			nil,
-			nil,
-		)
-		if err != nil {
-			return err
-		}
-		err = tr.keysDB.AddRole(baseRole)
-		if err != nil {
-			return err
-		}
-	}
-	tr.Root = s
-	return nil
-}
-
-// SetTimestamp parses the Signed object into a SignedTimestamp object
-// and sets the Repo.Timestamp field.
-func (tr *Repo) SetTimestamp(s *data.SignedTimestamp) error {
-	tr.Timestamp = s
-	return nil
-}
-
-// SetSnapshot parses the Signed object into a SignedSnapshots object
-// and sets the Repo.Snapshot field.
-func (tr *Repo) SetSnapshot(s *data.SignedSnapshot) error {
-	tr.Snapshot = s
-	return nil
-}
-
-// SetTargets parses the Signed object into a SignedTargets object,
-// reads the delegated roles and keys into the KeyDB, and sets the
-// SignedTargets object agaist the role in the Repo.Targets map.
-func (tr *Repo) SetTargets(role string, s *data.SignedTargets) error {
-	for _, k := range s.Signed.Delegations.Keys {
-		tr.keysDB.AddKey(k)
-	}
-	for _, r := range s.Signed.Delegations.Roles {
-		tr.keysDB.AddRole(r)
-	}
-	tr.Targets[role] = s
+	tr.timestamp = timestamp
 	return nil
 }
 
@@ -474,7 +432,7 @@ func (tr *Repo) SetTargets(role string, s *data.SignedTargets) error {
 // targets file associated with the given role. This may be nil if
 // the target isn't found in the targets file.
 func (tr Repo) TargetMeta(role, path string) *data.FileMeta {
-	if t, ok := tr.Targets[role]; ok {
+	if t, ok := tr.targets[role]; ok {
 		if m, ok := t.Signed.Targets[path]; ok {
 			return &m
 		}
@@ -490,7 +448,7 @@ func (tr Repo) TargetDelegations(role, path, pathHex string) []*data.Role {
 		pathHex = hex.EncodeToString(pathDigest[:])
 	}
 	var roles []*data.Role
-	if t, ok := tr.Targets[role]; ok {
+	if t, ok := tr.targets[role]; ok {
 		for _, r := range t.Signed.Delegations.Roles {
 			if r.CheckPrefixes(pathHex) || r.CheckPaths(path) {
 				roles = append(roles, r)
@@ -567,7 +525,7 @@ func (tr *Repo) AddTargets(role string, targets data.Files) (data.Files, error) 
 	}
 
 	// check the role's metadata
-	t, ok := tr.Targets[role]
+	t, ok := tr.targets[role]
 	if !ok { // the targetfile may not exist yet - if not, then create it
 		var err error
 		t, err = tr.InitTargets(role)
@@ -603,7 +561,7 @@ func (tr *Repo) RemoveTargets(role string, targets ...string) error {
 	}
 
 	// if the role exists but metadata does not yet, then our work is done
-	t, ok := tr.Targets[role]
+	t, ok := tr.targets[role]
 	if ok {
 		for _, path := range targets {
 			delete(t.Signed.Targets, path)
@@ -624,8 +582,8 @@ func (tr *Repo) UpdateSnapshot(role string, s *data.Signed) error {
 	if err != nil {
 		return err
 	}
-	tr.Snapshot.Signed.Meta[role] = meta
-	tr.Snapshot.Dirty = true
+	tr.snapshot.Signed.Meta[role] = meta
+	tr.snapshot.Dirty = true
 	return nil
 }
 
@@ -639,18 +597,18 @@ func (tr *Repo) UpdateTimestamp(s *data.Signed) error {
 	if err != nil {
 		return err
 	}
-	tr.Timestamp.Signed.Meta["snapshot"] = meta
-	tr.Timestamp.Dirty = true
+	tr.timestamp.Signed.Meta["snapshot"] = meta
+	tr.timestamp.Dirty = true
 	return nil
 }
 
 // SignRoot signs the root
 func (tr *Repo) SignRoot(expires time.Time) (*data.Signed, error) {
 	logrus.Debug("signing root...")
-	tr.Root.Signed.Expires = expires
-	tr.Root.Signed.Version++
+	tr.root.Signed.Expires = expires
+	tr.root.Signed.Version++
 	root := tr.keysDB.GetRole(data.CanonicalRootRole)
-	signed, err := tr.Root.ToSigned()
+	signed, err := tr.root.ToSigned()
 	if err != nil {
 		return nil, err
 	}
@@ -658,22 +616,22 @@ func (tr *Repo) SignRoot(expires time.Time) (*data.Signed, error) {
 	if err != nil {
 		return nil, err
 	}
-	tr.Root.Signatures = signed.Signatures
+	tr.root.Signatures = signed.Signatures
 	return signed, nil
 }
 
 // SignTargets signs the targets file for the given top level or delegated targets role
 func (tr *Repo) SignTargets(role string, expires time.Time) (*data.Signed, error) {
 	logrus.Debugf("sign targets called for role %s", role)
-	if _, ok := tr.Targets[role]; !ok {
+	if _, ok := tr.targets[role]; !ok {
 		return nil, data.ErrInvalidRole{
 			Role:   role,
 			Reason: "SignTargets called with non-existant targets role",
 		}
 	}
-	tr.Targets[role].Signed.Expires = expires
-	tr.Targets[role].Signed.Version++
-	signed, err := tr.Targets[role].ToSigned()
+	tr.targets[role].Signed.Expires = expires
+	tr.targets[role].Signed.Version++
+	signed, err := tr.targets[role].ToSigned()
 	if err != nil {
 		logrus.Debug("errored getting targets data.Signed object")
 		return nil, err
@@ -684,14 +642,14 @@ func (tr *Repo) SignTargets(role string, expires time.Time) (*data.Signed, error
 		logrus.Debug("errored signing ", role)
 		return nil, err
 	}
-	tr.Targets[role].Signatures = signed.Signatures
+	tr.targets[role].Signatures = signed.Signatures
 	return signed, nil
 }
 
 // SignSnapshot updates the snapshot based on the current targets and root then signs it
 func (tr *Repo) SignSnapshot(expires time.Time) (*data.Signed, error) {
 	logrus.Debug("signing snapshot...")
-	signedRoot, err := tr.Root.ToSigned()
+	signedRoot, err := tr.root.ToSigned()
 	if err != nil {
 		return nil, err
 	}
@@ -699,8 +657,8 @@ func (tr *Repo) SignSnapshot(expires time.Time) (*data.Signed, error) {
 	if err != nil {
 		return nil, err
 	}
-	tr.Root.Dirty = false // root dirty until changes captures in snapshot
-	for role, targets := range tr.Targets {
+	tr.root.Dirty = false // root dirty until changes captures in snapshot
+	for role, targets := range tr.targets {
 		signedTargets, err := targets.ToSigned()
 		if err != nil {
 			return nil, err
@@ -711,9 +669,9 @@ func (tr *Repo) SignSnapshot(expires time.Time) (*data.Signed, error) {
 		}
 		targets.Dirty = false
 	}
-	tr.Snapshot.Signed.Expires = expires
-	tr.Snapshot.Signed.Version++
-	signed, err := tr.Snapshot.ToSigned()
+	tr.snapshot.Signed.Expires = expires
+	tr.snapshot.Signed.Version++
+	signed, err := tr.snapshot.ToSigned()
 	if err != nil {
 		return nil, err
 	}
@@ -722,14 +680,14 @@ func (tr *Repo) SignSnapshot(expires time.Time) (*data.Signed, error) {
 	if err != nil {
 		return nil, err
 	}
-	tr.Snapshot.Signatures = signed.Signatures
+	tr.snapshot.Signatures = signed.Signatures
 	return signed, nil
 }
 
 // SignTimestamp updates the timestamp based on the current snapshot then signs it
 func (tr *Repo) SignTimestamp(expires time.Time) (*data.Signed, error) {
 	logrus.Debug("SignTimestamp")
-	signedSnapshot, err := tr.Snapshot.ToSigned()
+	signedSnapshot, err := tr.snapshot.ToSigned()
 	if err != nil {
 		return nil, err
 	}
@@ -737,9 +695,9 @@ func (tr *Repo) SignTimestamp(expires time.Time) (*data.Signed, error) {
 	if err != nil {
 		return nil, err
 	}
-	tr.Timestamp.Signed.Expires = expires
-	tr.Timestamp.Signed.Version++
-	signed, err := tr.Timestamp.ToSigned()
+	tr.timestamp.Signed.Expires = expires
+	tr.timestamp.Signed.Version++
+	signed, err := tr.timestamp.ToSigned()
 	if err != nil {
 		return nil, err
 	}
@@ -748,8 +706,8 @@ func (tr *Repo) SignTimestamp(expires time.Time) (*data.Signed, error) {
 	if err != nil {
 		return nil, err
 	}
-	tr.Timestamp.Signatures = signed.Signatures
-	tr.Snapshot.Dirty = false // snapshot is dirty until changes have been captured in timestamp
+	tr.timestamp.Signatures = signed.Signatures
+	tr.snapshot.Dirty = false // snapshot is dirty until changes have been captured in timestamp
 	return signed, nil
 }
 

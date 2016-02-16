@@ -115,7 +115,7 @@ func writeRepo(t *testing.T, dir string, repo *Repo) {
 	rootJSON, _ := json.Marshal(signedRoot)
 	ioutil.WriteFile(dir+"/root.json", rootJSON, 0755)
 
-	for r := range repo.Targets {
+	for r := range repo.targets {
 		signedTargets, err := repo.SignTargets(r, data.DefaultExpires("targets"))
 		assert.NoError(t, err)
 		targetsJSON, _ := json.Marshal(signedTargets)
@@ -157,10 +157,10 @@ func TestUpdateDelegations(t *testing.T) {
 	assert.NoError(t, err)
 
 	// no empty metadata is created for this role
-	_, ok := repo.Targets["targets/test"]
+	_, ok := repo.targets["targets/test"]
 	assert.False(t, ok, "no empty targets file should be created for deepest delegation")
 
-	r, ok := repo.Targets[data.CanonicalTargetsRole]
+	r, ok := repo.targets[data.CanonicalTargetsRole]
 	assert.True(t, ok)
 	assert.Len(t, r.Signed.Delegations.Roles, 1)
 	assert.Len(t, r.Signed.Delegations.Keys, 1)
@@ -178,7 +178,7 @@ func TestUpdateDelegations(t *testing.T) {
 
 	// this metadata didn't exist before, but creating targets/test/deep created
 	// the targets/test metadata
-	r, ok = repo.Targets["targets/test"]
+	r, ok = repo.targets["targets/test"]
 	assert.True(t, ok)
 	assert.Len(t, r.Signed.Delegations.Roles, 1)
 	assert.Len(t, r.Signed.Delegations.Keys, 1)
@@ -188,7 +188,7 @@ func TestUpdateDelegations(t *testing.T) {
 	assert.True(t, r.Dirty)
 
 	// no empty delegation metadata is created for targets/test/deep
-	_, ok = repo.Targets["targets/test/deep"]
+	_, ok = repo.targets["targets/test/deep"]
 	assert.False(t, ok, "no empty targets file should be created for deepest delegation")
 }
 
@@ -206,12 +206,12 @@ func TestUpdateDelegationsParentMissing(t *testing.T) {
 	assert.Error(t, err)
 	assert.IsType(t, data.ErrInvalidRole{}, err)
 
-	r, ok := repo.Targets[data.CanonicalTargetsRole]
+	r, ok := repo.targets[data.CanonicalTargetsRole]
 	assert.True(t, ok)
 	assert.Len(t, r.Signed.Delegations.Roles, 0)
 
 	// no delegation metadata created for non-existent parent
-	_, ok = repo.Targets["targets/test"]
+	_, ok = repo.targets["targets/test"]
 	assert.False(t, ok, "no targets file should be created for nonexistent parent delegation")
 }
 
@@ -236,7 +236,7 @@ func TestUpdateDelegationsMissingParentKey(t *testing.T) {
 	assert.IsType(t, signed.ErrNoKeys{}, err)
 
 	// no empty delegation metadata created for new delegation
-	_, ok := repo.Targets["targets/role"]
+	_, ok := repo.targets["targets/role"]
 	assert.False(t, ok, "no targets file should be created for empty delegation")
 }
 
@@ -257,12 +257,12 @@ func TestUpdateDelegationsInvalidRole(t *testing.T) {
 	assert.Error(t, err)
 	assert.IsType(t, data.ErrInvalidRole{}, err)
 
-	r, ok := repo.Targets[data.CanonicalTargetsRole]
+	r, ok := repo.targets[data.CanonicalTargetsRole]
 	assert.True(t, ok)
 	assert.Len(t, r.Signed.Delegations.Roles, 0)
 
 	// no delegation metadata created for invalid delgation
-	_, ok = repo.Targets["root"]
+	_, ok = repo.targets["root"]
 	assert.False(t, ok, "no targets file should be created since delegation failed")
 }
 
