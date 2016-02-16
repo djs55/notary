@@ -49,7 +49,7 @@ func (c *Client) Update() error {
 	err := c.update()
 	if err != nil {
 		logrus.Debug("Error occurred. Root will be downloaded and another update attempted")
-		if err := c.downloadRoot(); err != nil {
+		if err := c.loadRoot(); err != nil {
 			logrus.Debug("Client Update (Root):", err)
 			return err
 		}
@@ -62,12 +62,12 @@ func (c *Client) Update() error {
 }
 
 func (c *Client) update() error {
-	err := c.downloadTimestamp()
+	err := c.loadTimestamp()
 	if err != nil {
 		logrus.Debugf("Client Update (Timestamp): %s", err.Error())
 		return err
 	}
-	err = c.downloadSnapshot()
+	err = c.loadSnapshot()
 	if err != nil {
 		logrus.Debugf("Client Update (Snapshot): %s", err.Error())
 		return err
@@ -80,7 +80,7 @@ func (c *Client) update() error {
 		return err
 	}
 	// will always need top level targets at a minimum
-	err = c.downloadTargets("targets")
+	err = c.loadTargets("targets")
 	if err != nil {
 		logrus.Debugf("Client Update (Targets): %s", err.Error())
 		return err
@@ -123,8 +123,8 @@ func (c Client) checkRoot() error {
 	return nil
 }
 
-// downloadRoot is responsible for downloading the root.json
-func (c *Client) downloadRoot() error {
+// loadRoot is responsible for downloading the root.json
+func (c *Client) loadRoot() error {
 	logrus.Debug("Downloading Root...")
 	role := data.CanonicalRootRole
 	// We can't read an exact size for the root metadata without risking getting stuck in the TUF update cycle
@@ -245,10 +245,10 @@ func (c Client) verifyRoot(role string, s *data.Signed, minVersion int) error {
 	return nil
 }
 
-// downloadTimestamp is responsible for downloading the timestamp.json
+// loadTimestamp is responsible for downloading the timestamp.json
 // Timestamps are special in that we ALWAYS attempt to download and only
 // use cache if the download fails (and the cache is still valid).
-func (c *Client) downloadTimestamp() error {
+func (c *Client) loadTimestamp() error {
 	logrus.Debug("Downloading Timestamp...")
 	role := data.CanonicalTimestampRole
 
@@ -313,8 +313,8 @@ func (c *Client) verifyTimestamp(s *data.Signed, minVersion int) (*data.SignedTi
 	return data.TimestampFromSigned(s)
 }
 
-// downloadSnapshot is responsible for downloading the snapshot.json
-func (c *Client) downloadSnapshot() error {
+// loadSnapshot is responsible for downloading the snapshot.json
+func (c *Client) loadSnapshot() error {
 	logrus.Debug("Downloading Snapshot...")
 	role := data.CanonicalSnapshotRole
 	if c.local.Timestamp == nil {
@@ -389,10 +389,10 @@ func (c *Client) downloadSnapshot() error {
 	return nil
 }
 
-// downloadTargets downloads all targets and delegated targets for the repository.
+// loadTargets downloads all targets and delegated targets for the repository.
 // It uses a pre-order tree traversal as it's necessary to download parents first
 // to obtain the keys to validate children.
-func (c *Client) downloadTargets(role string) error {
+func (c *Client) loadTargets(role string) error {
 	logrus.Debug("Downloading Targets...")
 	stack := utils.NewStack()
 	stack.Push(role)
@@ -527,7 +527,7 @@ func (c Client) getTargetsFile(role string, keyIDs []string, snapshotMeta data.F
 	return s, nil
 }
 
-// TargetMeta ensures the repo is up to date. It assumes downloadTargets
+// TargetMeta ensures the repo is up to date. It assumes loadTargets
 // has already downloaded all delegated roles
 func (c Client) TargetMeta(role, path string, excludeRoles ...string) (*data.FileMeta, string) {
 	excl := make(map[string]bool)

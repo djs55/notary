@@ -323,7 +323,7 @@ func TestDownloadTargetsHappy(t *testing.T) {
 	// call repo.SignSnapshot to update the targets role in the snapshot
 	repo.SignSnapshot(data.DefaultExpires("snapshot"))
 
-	err = client.downloadTargets("targets")
+	err = client.loadTargets("targets")
 	assert.NoError(t, err)
 }
 
@@ -368,7 +368,7 @@ func TestDownloadTargetsLarge(t *testing.T) {
 	// Clear the cache to force an online download
 	client.cache.RemoveAll()
 
-	err = client.downloadTargets("targets")
+	err = client.loadTargets("targets")
 	assert.NoError(t, err)
 }
 
@@ -435,7 +435,7 @@ func TestDownloadTargetsDeepHappy(t *testing.T) {
 		assert.False(t, ok)
 	}
 
-	err = client.downloadTargets("targets")
+	err = client.loadTargets("targets")
 	assert.NoError(t, err)
 
 	_, ok := repo.Targets["targets"]
@@ -479,7 +479,7 @@ func TestDownloadTargetChecksumMismatch(t *testing.T) {
 
 	repo.Snapshot = &snap
 
-	err = client.downloadTargets("targets")
+	err = client.loadTargets("targets")
 	assert.IsType(t, ErrChecksumMismatch{}, err)
 }
 
@@ -502,7 +502,7 @@ func TestDownloadTargetsNoChecksum(t *testing.T) {
 
 	delete(repo.Snapshot.Signed.Meta["targets"].Hashes, "sha256")
 
-	err = client.downloadTargets("targets")
+	err = client.loadTargets("targets")
 	assert.IsType(t, ErrMissingMeta{}, err)
 }
 
@@ -525,7 +525,7 @@ func TestDownloadTargetsNoSnapshot(t *testing.T) {
 
 	repo.Snapshot = nil
 
-	err = client.downloadTargets("targets")
+	err = client.loadTargets("targets")
 	assert.IsType(t, ErrMissingMeta{}, err)
 }
 
@@ -547,7 +547,7 @@ func TestBootstrapDownloadRootHappy(t *testing.T) {
 	// unset snapshot as if we're bootstrapping from nothing
 	repo.Snapshot = nil
 
-	err = client.downloadRoot()
+	err = client.loadRoot()
 	assert.NoError(t, err)
 }
 
@@ -569,7 +569,7 @@ func TestUpdateDownloadRootHappy(t *testing.T) {
 	// sign snapshot to make root meta in snapshot get updated
 	signedOrig, err = repo.SignSnapshot(data.DefaultExpires("snapshot"))
 
-	err = client.downloadRoot()
+	err = client.loadRoot()
 	assert.NoError(t, err)
 }
 
@@ -593,7 +593,7 @@ func TestUpdateDownloadRootBadChecksum(t *testing.T) {
 	_, err = repo.SignSnapshot(data.DefaultExpires("snapshot"))
 	assert.NoError(t, err)
 
-	err = client.downloadRoot()
+	err = client.loadRoot()
 	assert.IsType(t, ErrChecksumMismatch{}, err)
 }
 
@@ -618,7 +618,7 @@ func TestUpdateDownloadRootChecksumNotFound(t *testing.T) {
 
 	// don't sign snapshot again to ensure checksum is out of date (bad)
 
-	err = client.downloadRoot()
+	err = client.loadRoot()
 	assert.IsType(t, store.ErrMetaNotFound{}, err)
 }
 
@@ -637,7 +637,7 @@ func TestDownloadTimestampHappy(t *testing.T) {
 	err = remoteStorage.SetMeta("timestamp", orig)
 	assert.NoError(t, err)
 
-	err = client.downloadTimestamp()
+	err = client.loadTimestamp()
 	assert.NoError(t, err)
 }
 
@@ -663,7 +663,7 @@ func TestDownloadSnapshotHappy(t *testing.T) {
 	err = remoteStorage.SetMeta("timestamp", orig)
 	assert.NoError(t, err)
 
-	err = client.downloadSnapshot()
+	err = client.loadSnapshot()
 	assert.NoError(t, err)
 }
 
@@ -706,7 +706,7 @@ func TestDownloadSnapshotLarge(t *testing.T) {
 	// Clear the cache to force an online download
 	client.cache.RemoveAll()
 
-	err = client.downloadSnapshot()
+	err = client.loadSnapshot()
 	assert.NoError(t, err)
 }
 
@@ -729,7 +729,7 @@ func TestDownloadSnapshotNoTimestamp(t *testing.T) {
 
 	repo.Timestamp = nil
 
-	err = client.downloadSnapshot()
+	err = client.loadSnapshot()
 	assert.IsType(t, ErrMissingMeta{}, err)
 }
 
@@ -750,7 +750,7 @@ func TestDownloadSnapshotNoChecksum(t *testing.T) {
 
 	delete(repo.Timestamp.Signed.Meta["snapshot"].Hashes, "sha256")
 
-	err = client.downloadSnapshot()
+	err = client.loadSnapshot()
 	assert.IsType(t, ErrMissingMeta{}, err)
 }
 
@@ -775,7 +775,7 @@ func TestDownloadSnapshotChecksumNotFound(t *testing.T) {
 
 	// by not signing timestamp again we ensure it has the wrong checksum
 
-	err = client.downloadSnapshot()
+	err = client.loadSnapshot()
 	assert.IsType(t, store.ErrMetaNotFound{}, err)
 }
 
@@ -844,7 +844,7 @@ func TestDownloadTimestampNoTimestamps(t *testing.T) {
 	remoteStorage := store.NewMemoryStore(nil)
 	client := NewClient(repo, remoteStorage, kdb, localStorage)
 
-	err = client.downloadTimestamp()
+	err = client.loadTimestamp()
 	assert.Error(t, err)
 	notFoundErr, ok := err.(store.ErrMetaNotFound)
 	assert.True(t, ok)
@@ -860,7 +860,7 @@ func TestDownloadTimestampNoLocalTimestampRemoteTimestampEmpty(t *testing.T) {
 	remoteStorage := store.NewMemoryStore(map[string][]byte{data.CanonicalTimestampRole: {}})
 	client := NewClient(repo, remoteStorage, kdb, localStorage)
 
-	err = client.downloadTimestamp()
+	err = client.loadTimestamp()
 	assert.Error(t, err)
 	assert.IsType(t, &json.SyntaxError{}, err)
 }
@@ -881,7 +881,7 @@ func TestDownloadTimestampNoLocalTimestampRemoteTimestampInvalid(t *testing.T) {
 	remoteStorage := store.NewMemoryStore(map[string][]byte{data.CanonicalTimestampRole: ts})
 
 	client := NewClient(repo, remoteStorage, kdb, localStorage)
-	err = client.downloadTimestamp()
+	err = client.loadTimestamp()
 	assert.Error(t, err)
 	assert.IsType(t, signed.ErrRoleThreshold{}, err)
 }
@@ -901,7 +901,7 @@ func TestDownloadTimestampLocalTimestampNoRemoteTimestamp(t *testing.T) {
 	remoteStorage := store.NewMemoryStore(nil)
 	client := NewClient(repo, remoteStorage, kdb, localStorage)
 
-	err = client.downloadTimestamp()
+	err = client.loadTimestamp()
 	assert.NoError(t, err)
 }
 
@@ -924,6 +924,6 @@ func TestDownloadTimestampLocalTimestampInvalidRemoteTimestamp(t *testing.T) {
 	remoteStorage := store.NewMemoryStore(map[string][]byte{data.CanonicalTimestampRole: ts})
 
 	client := NewClient(repo, remoteStorage, kdb, localStorage)
-	err = client.downloadTimestamp()
+	err = client.loadTimestamp()
 	assert.NoError(t, err)
 }
