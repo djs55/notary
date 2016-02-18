@@ -15,7 +15,6 @@ import (
 
 	"github.com/docker/notary/certs"
 	"github.com/docker/notary/passphrase"
-	"github.com/docker/notary/tuf/client"
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
 	"github.com/docker/notary/tuf/store"
@@ -107,12 +106,7 @@ func TestUpdateSucceedsEvenIfCannotWriteNewRepo(t *testing.T) {
 		repo.fileStore = &unwritableStore{MetadataStore: repo.fileStore, roleToNotWrite: role}
 		_, err := repo.Update(false)
 
-		if role == data.CanonicalRootRole {
-			require.Error(t, err) // because checkRoot loads root from cache to check hashes
-			continue
-		} else {
-			require.NoError(t, err)
-		}
+		require.NoError(t, err)
 
 		for r, expected := range serverMeta {
 			actual, err := repo.fileStore.GetMeta(r, -1)
@@ -159,10 +153,6 @@ func TestUpdateSucceedsEvenIfCannotWriteExistingRepo(t *testing.T) {
 			repo.fileStore = &unwritableStore{MetadataStore: origFileStore, roleToNotWrite: role}
 			_, err := repo.Update(forWrite)
 
-			if role == data.CanonicalRootRole {
-				require.Error(t, err) // because checkRoot loads root from cache to check hashes
-				continue
-			}
 			require.NoError(t, err)
 
 			for r, expected := range serverMeta {
@@ -752,7 +742,7 @@ func testUpdateRemoteFileChecksumWrong(t *testing.T, opts updateOpts, errExpecte
 		if opts.role == data.CanonicalTimestampRole {
 			_, rightError = err.(store.ErrMaliciousServer)
 		} else {
-			_, isErrChecksum := err.(client.ErrChecksumMismatch)
+			_, isErrChecksum := err.(data.ErrChecksumMismatch)
 			_, isErrMaliciousServer := err.(store.ErrMaliciousServer)
 			rightError = isErrChecksum || isErrMaliciousServer
 		}
