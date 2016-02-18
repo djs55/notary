@@ -921,7 +921,7 @@ func waysToMessUpServerNonRootPerRole(t *testing.T) map[string][]swizzleExpectat
 	}
 	perRoleSwizzling[data.CanonicalTargetsRole] = []swizzleExpectations{{
 		desc:       fmt.Sprintf("target missing delegations data"),
-		expectErrs: []interface{}{client.ErrChecksumMismatch{}},
+		expectErrs: []interface{}{data.ErrChecksumMismatch{}},
 		swizzle: func(s *testutils.MetadataSwizzler, role string) error {
 			return s.MutateTargets(func(tg *data.Targets) {
 				tg.Delegations.Roles = tg.Delegations.Roles[1:]

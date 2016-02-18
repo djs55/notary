@@ -26,10 +26,12 @@ func (e ErrMissingMeta) Error() string {
 type ErrChecksumMismatch struct {
 	hashAlgorithm string
 	name          string
+	expected      string
 }
 
 func (e ErrChecksumMismatch) Error() string {
-	return fmt.Sprintf("%s checksum for %s did not match", e.hashAlgorithm, e.name)
+	return fmt.Sprintf("%s checksum for %s did not match: expected %s", e.hashAlgorithm, e.name,
+		e.expected)
 }
 
 // ErrFileTooBig is the error to be returned when the bytes for a particular

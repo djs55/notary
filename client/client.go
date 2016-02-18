@@ -2,8 +2,6 @@ package client
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -454,7 +452,7 @@ func (r *NotaryRepository) GetTargetByName(name string, roles ...string) (*Targe
 			}
 			return nil
 		}
-		err = r.tufRepo.WalkTargets(name, role, getTargetVisitorFunc, skipRoles...)
+		err := r.tufRepo.WalkTargets(name, role, getTargetVisitorFunc, skipRoles...)
 		// Check that we didn't error, and that we assigned to our target
 		if err == nil && foundTarget {
 			return &TargetWithRole{Target: Target{Name: name, Hashes: resultMeta.Hashes, Length: resultMeta.Length}, Role: resultRoleName}, nil
@@ -462,43 +460,6 @@ func (r *NotaryRepository) GetTargetByName(name string, roles ...string) (*Targe
 	}
 	return nil, fmt.Errorf("No trust data for %s", name)
 
-}
-
-// targetMeta ensures the repo is up to date. It assumes downloadTargets
-// has already downloaded all delegated roles
-func (r *NotaryRepository) targetMeta(role, path string, excludeRoles ...string) (*data.FileMeta, string) {
-	excl := make(map[string]bool)
-	for _, r := range excludeRoles {
-		excl[r] = true
-	}
-
-	pathDigest := sha256.Sum256([]byte(path))
-	pathHex := hex.EncodeToString(pathDigest[:])
-
-	// FIFO list of targets delegations to inspect for target
-	roles := []string{role}
-	var (
-		meta *data.FileMeta
-		curr string
-	)
-	for len(roles) > 0 {
-		// have to do these lines here because of order of execution in for statement
-		curr = roles[0]
-		roles = roles[1:]
-
-		meta = r.tufRepo.TargetMeta(curr, path)
-		if meta != nil {
-			// we found the target!
-			return meta, curr
-		}
-		delegations := r.tufRepo.TargetDelegations(curr, path, pathHex)
-		for _, d := range delegations {
-			if !excl[d.Name] {
-				roles = append(roles, d.Name)
-			}
-		}
-	}
-	return meta, ""
 }
 
 // GetChangelist returns the list of the repository's unpublished changes
@@ -795,7 +756,7 @@ func (r *NotaryRepository) Update(forWrite bool) (*tufclient.Client, error) {
 		logrus.Error(remoteErr)
 	}
 	c := tufclient.NewClient(b, remote, r.fileStore)
-	err = c.Update()
+	repo, err := c.Update()
 	if err != nil {
 		// notFound.Resource may include a checksum so when the role is root,
 		// it will be root.json or root.<checksum>.json. Therefore best we can
@@ -803,10 +764,6 @@ func (r *NotaryRepository) Update(forWrite bool) (*tufclient.Client, error) {
 		if notFound, ok := err.(store.ErrMetaNotFound); ok && strings.HasPrefix(notFound.Resource, data.CanonicalRootRole+".") {
 			return nil, r.errRepositoryNotExist()
 		}
-		return nil, err
-	}
-	repo, err := b.Finish()
-	if err != nil {
 		return nil, err
 	}
 	r.tufRepo = repo
@@ -821,7 +778,7 @@ func (r *NotaryRepository) Update(forWrite bool) (*tufclient.Client, error) {
 func (r *NotaryRepository) bootstrapClient(checkInitialized bool) (tuf.RepoBuilder, error) {
 	var successfullyBootstrapped bool
 	version := 0
-	b := tuf.NewRepoBuilder(r.CertStore, r.gun, nil, nil)
+	b := tuf.NewRepoBuilder(r.CertStore, r.gun, r.CryptoService, nil, nil)
 
 	// try to read root from cache first. We will trust this root
 	// until we detect a problem during update which will cause

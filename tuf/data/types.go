@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
@@ -149,7 +150,8 @@ func (f FileMeta) ValidateChecksum(contents []byte, name string) error {
 		case "sha256":
 			genHash := sha256.Sum256(contents)
 			if !bytes.Equal(genHash[:], checksum) {
-				return ErrChecksumMismatch{name: name, hashAlgorithm: hashAlgo}
+				return ErrChecksumMismatch{
+					name: name, hashAlgorithm: hashAlgo, expected: hex.EncodeToString(checksum)}
 			}
 			checksumValidated = true
 		}

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/hex"
 	"encoding/json"
 
 	"github.com/Sirupsen/logrus"
@@ -28,7 +29,7 @@ func NewClient(builder tuf.RepoBuilder, remote store.RemoteStore, cache store.Me
 }
 
 // Update performs an update to the TUF repo as defined by the TUF spec
-func (c *Client) Update() error {
+func (c *Client) Update() (*tuf.Repo, error) {
 	// 1. Get timestamp
 	//   a. If timestamp error (verification, expired, etc...) download new root and return to 1.
 	// 2. Check if local snapshot is up to date
@@ -38,58 +39,64 @@ func (c *Client) Update() error {
 	//   a. If incorrect, download new root and return to 1.
 	// 4. Iteratively download and search targets and delegations to find target meta
 	logrus.Debug("updating TUF client")
-	snapshot, err := c.update()
+	err := c.update()
 	if err != nil {
 		logrus.Debug("Error occurred. Root will be downloaded and another update attempted")
 		logrus.Debug("Resetting the TUF builder...")
-		c.builder = c.builder.Retry()
 
-		if err := c.downloadRoot(snapshot); err != nil {
+		repoSoFar := c.builder.GetRepo()
+		c.builder = c.builder.BootstrapNewBuilder()
+
+		if err := c.downloadRoot(repoSoFar.Snapshot); err != nil {
 			logrus.Debug("Client Update (Root):", err)
-			return err
+			return nil, err
 		}
 		// If we error again, we now have the latest root and just want to fail
 		// out as there's no expectation the problem can be resolved automatically
 		logrus.Debug("retrying TUF client update")
-		_, err := c.update()
+		if err := c.update(); err != nil {
+			return nil, err
+		}
+	}
+	return c.builder.Finish()
+}
+
+func (c *Client) update() error {
+	if err := c.downloadTimestamp(); err != nil {
+		logrus.Debugf("Client Update (Timestamp): %s", err.Error())
+		return err
+	}
+	if err := c.downloadSnapshot(); err != nil {
+		logrus.Debugf("Client Update (Snapshot): %s", err.Error())
+		return err
+	}
+	// will always need top level targets at a minimum
+	if err := c.downloadTargets(); err != nil {
+		logrus.Debugf("Client Update (Targets): %s", err.Error())
 		return err
 	}
 	return nil
 }
 
-func (c *Client) update() (*data.SignedSnapshot, error) {
-	timestamp, err := c.downloadTimestamp()
-	if err != nil {
-		logrus.Debugf("Client Update (Timestamp): %s", err.Error())
-		return nil, err
-	}
-	snapshot, err := c.downloadSnapshot(*timestamp)
-	if err != nil {
-		logrus.Debugf("Client Update (Snapshot): %s", err.Error())
-		return snapshot, err
-	}
-	// will always need top level targets at a minimum
-	err = c.downloadTargets(*snapshot)
-	if err != nil {
-		logrus.Debugf("Client Update (Targets): %s", err.Error())
-		return snapshot, err
-	}
-	return snapshot, nil
-}
-
 // downloadRoot is responsible for downloading the root.json
-func (c *Client) downloadRoot(snapshot *data.SignedSnapshot) error {
-	logrus.Debug("Loading root...")
+func (c *Client) downloadRoot(prevSnapshot *data.SignedSnapshot) error {
 	role := data.CanonicalRootRole
 
 	// We can't read an exact size for the root metadata without risking getting stuck in the TUF update cycle
 	// since it's possible that downloading timestamp/snapshot metadata may fail due to a signature mismatch
-	var size int64 = -1
-	var expectedSha256 []byte
-	if snapshot != nil {
-		size = snapshot.Signed.Meta[role].Length
-		expectedSha256 = snapshot.Signed.Meta[role].Hashes["sha256"]
+	if prevSnapshot == nil {
+		logrus.Debugf("Loading root with no expected checksum")
+
+		// get the cached root, if it exists, just for version checking
+		cachedRoot, _ := c.cache.GetMeta(role, -1)
+		// prefer to download a new root
+		_, remoteErr := c.tryLoadRemote(role, -1, nil, cachedRoot)
+		return remoteErr
 	}
+
+	size := prevSnapshot.Signed.Meta[role].Length
+	expectedSha256 := prevSnapshot.Signed.Meta[role].Hashes["sha256"]
+	logrus.Debugf("Loading root with expected checksum %s", hex.EncodeToString(expectedSha256))
 
 	_, err := c.tryLoadCacheThenRemote(role, size, expectedSha256)
 	return err
@@ -98,60 +105,52 @@ func (c *Client) downloadRoot(snapshot *data.SignedSnapshot) error {
 // downloadTimestamp is responsible for downloading the timestamp.json
 // Timestamps are special in that we ALWAYS attempt to download and only
 // use cache if the download fails (and the cache is still valid).
-func (c *Client) downloadTimestamp() (*data.SignedTimestamp, error) {
+func (c *Client) downloadTimestamp() error {
 	logrus.Debug("Loading timestamp...")
 	role := data.CanonicalTimestampRole
-	ts := &data.SignedTimestamp{}
 
 	// get the cached timestamp, if it exists
 	cachedTS, cachedErr := c.cache.GetMeta(role, notary.MaxTimestampSize)
 	// always get the remote timestamp, since it supercedes the local one
-	remoteTS, remoteErr := c.tryLoadRemote(role, notary.MaxTimestampSize, nil, cachedTS)
+	_, remoteErr := c.tryLoadRemote(role, notary.MaxTimestampSize, nil, cachedTS)
 
 	switch {
 	case remoteErr == nil:
-		json.Unmarshal(remoteTS, ts)
+		return nil
 	case cachedErr == nil:
 		logrus.Debug(remoteErr.Error())
 		logrus.Warn("Error while downloading remote metadata, using cached timestamp - this might not be the latest version available remotely")
 
-		if err := c.builder.Load(role, cachedTS, 0); err != nil {
-			return nil, err
+		err := c.builder.Load(role, cachedTS, 0)
+		if err == nil {
+			logrus.Debug("successfully verified cached timestamp")
 		}
-
-		logrus.Debug("successfully verified cached timestamp")
-		json.Unmarshal(cachedTS, ts)
+		return err
 	default:
 		logrus.Debug("no cached or remote timestamp available")
-		return nil, remoteErr
+		return remoteErr
 	}
-
-	return ts, nil
 }
 
 // downloadSnapshot is responsible for downloading the snapshot.json
-func (c *Client) downloadSnapshot(ts data.SignedTimestamp) (*data.SignedSnapshot, error) {
+func (c *Client) downloadSnapshot() error {
 	logrus.Debug("Loading snapshot...")
 	role := data.CanonicalSnapshotRole
-	sn := &data.SignedSnapshot{}
+
+	timestamp := c.builder.GetRepo().Timestamp
 
 	// we're expecting it's previously been vetted
-	size := ts.Signed.Meta[role].Length
-	expectedSha256 := ts.Signed.Meta[role].Hashes["sha256"]
+	size := timestamp.Signed.Meta[role].Length
+	expectedSha256 := timestamp.Signed.Meta[role].Hashes["sha256"]
 
-	raw, err := c.tryLoadCacheThenRemote(role, size, expectedSha256)
-	if raw != nil {
-		if e := json.Unmarshal(raw, sn); e == nil {
-			return sn, err
-		}
-	}
-	return nil, err
+	_, err := c.tryLoadCacheThenRemote(role, size, expectedSha256)
+	return err
 }
 
 // downloadTargets downloads all targets and delegated targets for the repository.
 // It uses a pre-order tree traversal as it's necessary to download parents first
 // to obtain the keys to validate children.
-func (c *Client) downloadTargets(snap data.SignedSnapshot) error {
+func (c *Client) downloadTargets() error {
 	toDownload := []data.DelegationRole{{
 		BaseRole: data.BaseRole{Name: data.CanonicalTargetsRole},
 		Paths:    []string{""},
@@ -160,7 +159,7 @@ func (c *Client) downloadTargets(snap data.SignedSnapshot) error {
 		role := toDownload[0]
 		toDownload = toDownload[1:]
 
-		children, err := c.getTargetsFile(role, snap)
+		children, err := c.getTargetsFile(role)
 		if err != nil {
 			if _, ok := err.(data.ErrMissingMeta); ok && role.Name != data.CanonicalTargetsRole {
 				// if the role meta hasn't been published,
@@ -175,13 +174,14 @@ func (c *Client) downloadTargets(snap data.SignedSnapshot) error {
 	return nil
 }
 
-func (c Client) getTargetsFile(role data.DelegationRole, snapshot data.SignedSnapshot) ([]data.DelegationRole, error) {
+func (c Client) getTargetsFile(role data.DelegationRole) ([]data.DelegationRole, error) {
 	logrus.Debugf("Loading %s...", role.Name)
 	tgs := &data.SignedTargets{}
 
 	// we're expecting it's previously been vetted
-	roleMeta, err := snapshot.GetMeta(role.Name)
+	roleMeta, err := c.builder.GetRepo().Snapshot.GetMeta(role.Name)
 	if err != nil {
+		logrus.Debugf("skipping %s because there is no checksum for it")
 		return nil, err
 	}
 	expectedSha256 := roleMeta.Hashes["sha256"]
