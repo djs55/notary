@@ -1,6 +1,7 @@
 package data
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
 	"fmt"
@@ -110,9 +111,23 @@ type Signature struct {
 	Signature []byte       `json:"sig"`
 }
 
+// ChecksumValidator can validate a checksum given some bytes and the name
+type ChecksumValidator interface {
+	// ValidateChecksum returns nil error if there is at least one supported checksum hash
+	// in the FileMeta, and if every supported checksum hash matches the hash of the
+	// contents.
+	ValidateChecksum(contents []byte, name string) error
+}
+
 // Files is the map of paths to file meta container in targets and delegations
 // metadata files
 type Files map[string]FileMeta
+
+// ValidateChecksum is to implement the ChecksumValidator interface
+func (f Files) ValidateChecksum(contents []byte, name string) error {
+	// f[name] is just an empty FileMeta with no hashes if the name doesn't exist
+	return f[name].ValidateChecksum(contents, name)
+}
 
 // Hashes is the map of hash type to digest created for each metadata
 // and target file
@@ -124,6 +139,31 @@ type FileMeta struct {
 	Length int64           `json:"length"`
 	Hashes Hashes          `json:"hashes"`
 	Custom json.RawMessage `json:"custom,omitempty"`
+}
+
+// ValidateChecksum is to implement the ChecksumValidator interface
+func (f FileMeta) ValidateChecksum(contents []byte, name string) error {
+	var checksumValidated bool
+	for hashAlgo, checksum := range f.Hashes {
+		switch strings.ToLower(hashAlgo) {
+		case "sha256":
+			genHash := sha256.Sum256(contents)
+			if !bytes.Equal(genHash[:], checksum) {
+				return ErrChecksumMismatch{name: name, hashAlgorithm: hashAlgo}
+			}
+			checksumValidated = true
+		}
+	}
+
+	if !checksumValidated {
+		return ErrMissingMeta{name: name}
+	}
+
+	if int64(len(contents)) > f.Length {
+		return ErrFileTooBig{name: name}
+	}
+
+	return nil
 }
 
 // NewFileMeta generates a FileMeta object from the reader, using the

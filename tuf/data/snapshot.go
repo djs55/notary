@@ -118,9 +118,11 @@ func (sp *SignedSnapshot) AddMeta(role string, meta FileMeta) {
 // not found
 func (sp *SignedSnapshot) GetMeta(role string) (*FileMeta, error) {
 	if meta, ok := sp.Signed.Meta[role]; ok {
-		return &meta, nil
+		if _, ok := meta.Hashes["sha256"]; ok {
+			return &meta, nil
+		}
 	}
-	return nil, ErrMissingMeta{Role: role}
+	return nil, ErrMissingMeta{name: role}
 }
 
 // DeleteMeta removes a role from the snapshot. If the role doesn't

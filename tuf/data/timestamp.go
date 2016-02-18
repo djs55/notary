@@ -90,9 +90,9 @@ func (ts *SignedTimestamp) ToSigned() (*Signed, error) {
 // GetSnapshot gets the expected snapshot metadata hashes in the timestamp metadata,
 // or nil if it doesn't exist
 func (ts *SignedTimestamp) GetSnapshot() (*FileMeta, error) {
-	snapshotExpected, ok := ts.Signed.Meta[CanonicalSnapshotRole]
-	if !ok {
-		return nil, ErrMissingMeta{Role: CanonicalSnapshotRole}
+	snapshotExpected := ts.Signed.Meta[CanonicalSnapshotRole]
+	if _, ok := snapshotExpected.Hashes["sha256"]; ok {
+		return nil, ErrMissingMeta{name: CanonicalSnapshotRole}
 	}
 	return &snapshotExpected, nil
 }

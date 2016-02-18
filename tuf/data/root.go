@@ -14,6 +14,22 @@ type SignedRoot struct {
 	Dirty      bool
 }
 
+// GetRole returns a BaseRole, always
+func (s SignedRoot) GetRole(roleName string) BaseRole {
+	r, ok := s.Signed.Roles[roleName]
+	if !ok || r == nil {
+		return BaseRole{}
+	}
+	keymap := make(map[string]PublicKey)
+	for _, keyID := range r.KeyIDs {
+		k, ok := s.Signed.Keys[keyID]
+		if ok {
+			keymap[keyID] = k
+		}
+	}
+	return BaseRole{Name: roleName, Keys: keymap, Threshold: r.Threshold}
+}
+
 // Root is the Signed component of a root.json
 type Root struct {
 	Type               string               `json:"_type"`
