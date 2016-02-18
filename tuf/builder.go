@@ -11,18 +11,24 @@ import (
 	"github.com/docker/notary/tuf/signed"
 )
 
+// ErrBuildDone is returned when any functions are called on RepoBuilder, and it
+// is already finished building
 type ErrBuildDone struct{}
 
 func (e ErrBuildDone) Error() string {
 	return "the builder is done building and cannot accept any more input or produce any more output"
 }
 
+// ErrInvalidState is returned when any functions are called on RepoBuilder, and
+// it's in an unknown state
 type ErrInvalidState struct{}
 
 func (e ErrInvalidState) Error() string {
 	return "the builder is in an invalid state and cannot recover"
 }
 
+// ErrInvalidInputForBuilderState is returned when RepoBuilder.Load is called
+// with the wrong type of metadata for thes tate that it's in
 type ErrInvalidInputForBuilderState struct{ expectedRoleType string }
 
 func (e ErrInvalidInputForBuilderState) Error() string {
@@ -30,12 +36,14 @@ func (e ErrInvalidInputForBuilderState) Error() string {
 		"the builder is in a state where it is only accepting %s metadata", e.expectedRoleType)
 }
 
+// RepoBuilder is an interface for an object which builds a tuf.Repo
 type RepoBuilder interface {
 	Load(roleName string, content []byte, minVersion int) error
 	Finish() (*Repo, error)
 	Retry() RepoBuilder
 }
 
+// NewRepoBuilder is the only way to get a pre-built RepoBuilder
 func NewRepoBuilder(certStore trustmanager.X509Store, gun string,
 	rootRole *data.BaseRole, checksum data.ChecksumValidator) RepoBuilder {
 
@@ -55,7 +63,7 @@ func NewRepoBuilder(certStore trustmanager.X509Store, gun string,
 // builderState is an interface for one state of the builder
 type builderState interface {
 	// Input validates the content, and if valid, sets it on the repo
-	load(repo *Repo, roleName string, content []byte, minVersion int) error
+	accept(repo *Repo, roleName string, content []byte, minVersion int) error
 }
 
 type repoBuilder struct {
@@ -67,12 +75,13 @@ type repoBuilder struct {
 }
 
 func (rb *repoBuilder) Retry() RepoBuilder {
-	var rootRole *data.BaseRole
-	var checksum data.ChecksumValidator
-
+	var (
+		rootRole *data.BaseRole
+		checksum data.ChecksumValidator
+	)
 	switch rb.currentState.(type) {
 
-	case loadTargetsState, loadDelegationState:
+	case validateRootChecksumState, loadTargetsState, loadDelegationState:
 		checksum = rb.repo.Snapshot.Signed.Meta[data.CanonicalRootRole]
 		r := rb.repo.Root.GetRole(data.CanonicalRootRole)
 		rootRole = &r
@@ -87,7 +96,9 @@ func (rb *repoBuilder) Retry() RepoBuilder {
 func (rb *repoBuilder) Finish() (*Repo, error) {
 	switch rb.currentState.(type) {
 
-	case loadRootState, loadTimestampState, loadSnapshotState, loadTargetsState, loadDelegationState:
+	case loadRootState, loadTimestampState, loadSnapshotState, validateRootChecksumState,
+		loadTargetsState, loadDelegationState:
+
 		rb.currentState = buildingDoneState{}
 		return rb.repo, nil
 
@@ -101,8 +112,9 @@ func (rb *repoBuilder) Finish() (*Repo, error) {
 func (rb *repoBuilder) Load(roleName string, content []byte, minVersion int) error {
 	// decide whether or not to load the input at all, given the current state
 	switch rb.currentState.(type) {
-	case loadRootState, loadTimestampState, loadSnapshotState, loadTargetsState, loadDelegationState:
-		if err := rb.currentState.load(rb.repo, roleName, content, minVersion); err != nil {
+	case loadRootState, loadTimestampState, loadSnapshotState, validateRootChecksumState,
+		loadTargetsState, loadDelegationState:
+		if err := rb.currentState.accept(rb.repo, roleName, content, minVersion); err != nil {
 			return err
 		}
 	case buildingDoneState:
@@ -123,10 +135,16 @@ func (rb *repoBuilder) Load(roleName string, content []byte, minVersion int) err
 		rb.currentState = loadSnapshotState{
 			role:        rb.repo.Root.GetRole(data.CanonicalSnapshotRole),
 			checksummer: rb.repo.Timestamp.Signed.Meta,
-			loadedRoot:  rb.loadedRoot,
 		}
 
 	case loadSnapshotState:
+		rb.currentState = validateRootChecksumState{
+			checksummer: rb.repo.Snapshot.Signed.Meta,
+		}
+		// call Load immediately in order to trigger the checksum validation
+		return rb.Load(data.CanonicalRootRole, rb.loadedRoot, -1)
+
+	case validateRootChecksumState:
 		rb.currentState = loadTargetsState{
 			role:        rb.repo.Root.GetRole(data.CanonicalTargetsRole),
 			checksummer: rb.repo.Snapshot.Signed.Meta,
@@ -172,7 +190,7 @@ type loadRootState struct {
 
 // Input takes a repo, some content, and a min version - if the content validates, it sets the
 // metadata on the repo
-func (s loadRootState) load(repo *Repo, roleName string, content []byte, minVersion int) error {
+func (s loadRootState) accept(repo *Repo, roleName string, content []byte, minVersion int) error {
 	if roleName != data.CanonicalRootRole {
 		return ErrInvalidInputForBuilderState{expectedRoleType: data.CanonicalRootRole}
 	}
@@ -227,7 +245,7 @@ type loadTimestampState struct {
 	role data.BaseRole
 }
 
-func (s loadTimestampState) load(repo *Repo, roleName string, content []byte, minVersion int) error {
+func (s loadTimestampState) accept(repo *Repo, roleName string, content []byte, minVersion int) error {
 	if roleName != data.CanonicalTimestampRole {
 		return ErrInvalidInputForBuilderState{expectedRoleType: data.CanonicalTimestampRole}
 	}
@@ -256,10 +274,9 @@ func (s loadTimestampState) load(repo *Repo, roleName string, content []byte, mi
 type loadSnapshotState struct {
 	role        data.BaseRole
 	checksummer data.ChecksumValidator
-	loadedRoot  []byte
 }
 
-func (s loadSnapshotState) load(repo *Repo, roleName string, content []byte, minVersion int) error {
+func (s loadSnapshotState) accept(repo *Repo, roleName string, content []byte, minVersion int) error {
 	if roleName != data.CanonicalSnapshotRole {
 		return ErrInvalidInputForBuilderState{expectedRoleType: data.CanonicalSnapshotRole}
 	}
@@ -279,14 +296,23 @@ func (s loadSnapshotState) load(repo *Repo, roleName string, content []byte, min
 		return err
 	}
 
-	// validate the root now that we have the snapshot
-	checksum := signedSnapshot.Signed.Meta[data.CanonicalRootRole]
-	if err := checksum.ValidateChecksum(s.loadedRoot, data.CanonicalRootRole); err != nil {
-		return err
-	}
-
 	repo.SetSnapshot(signedSnapshot)
 	return nil
+}
+
+// ---- snapshot is loaded, now go back and verify the loaded root's checksum state ----
+
+type validateRootChecksumState struct {
+	checksummer data.ChecksumValidator
+}
+
+// this state's accept
+func (s validateRootChecksumState) accept(repo *Repo, roleName string, content []byte, minVersion int) error {
+	if roleName != data.CanonicalRootRole {
+		return ErrInvalidInputForBuilderState{expectedRoleType: data.CanonicalRootRole}
+	}
+
+	return s.checksummer.ValidateChecksum(content, roleName)
 }
 
 // ---- load targets state ----
@@ -296,7 +322,7 @@ type loadTargetsState struct {
 	checksummer data.ChecksumValidator
 }
 
-func (s loadTargetsState) load(repo *Repo, roleName string, content []byte, minVersion int) error {
+func (s loadTargetsState) accept(repo *Repo, roleName string, content []byte, minVersion int) error {
 	if roleName != data.CanonicalTargetsRole {
 		return ErrInvalidInputForBuilderState{expectedRoleType: data.CanonicalTargetsRole}
 	}
@@ -327,7 +353,7 @@ type loadDelegationState struct {
 	checksummer data.ChecksumValidator
 }
 
-func (s loadDelegationState) load(repo *Repo, roleName string, content []byte, minVersion int) error {
+func (s loadDelegationState) accept(repo *Repo, roleName string, content []byte, minVersion int) error {
 	if !data.IsDelegation(roleName) {
 		return ErrInvalidInputForBuilderState{expectedRoleType: "delegation role"}
 	}
@@ -362,6 +388,6 @@ func (s loadDelegationState) load(repo *Repo, roleName string, content []byte, m
 type buildingDoneState struct{}
 
 // we cannot accept any more input
-func (s buildingDoneState) load(repo *Repo, roleName string, content []byte, minVersion int) error {
+func (s buildingDoneState) accept(repo *Repo, roleName string, content []byte, minVersion int) error {
 	return ErrBuildDone{}
 }

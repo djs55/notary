@@ -104,6 +104,7 @@ func TestUpdateSucceedsEvenIfCannotWriteNewRepo(t *testing.T) {
 	for role := range serverMeta {
 		repo := newBlankRepo(t, ts.URL)
 		repo.fileStore = &unwritableStore{MetadataStore: repo.fileStore, roleToNotWrite: role}
+
 		_, err := repo.Update(false)
 
 		require.NoError(t, err)
