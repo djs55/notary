@@ -38,6 +38,8 @@ PKGS ?= $(shell go list ./... | tr '\n' ' ')
 
 GO_VERSION = $(shell go version | awk '{print $$3}')
 
+PARALLEL ?= $(shell type parallel 1>/dev/null 2>&1 && echo "yes" || echo "no")
+
 .PHONY: clean all fmt vet lint build test binaries cross cover docker-images notary-dockerfile
 .DELETE_ON_ERROR: cover
 .DEFAULT: default
@@ -143,25 +145,32 @@ protos:
 #
 # be run first
 
-define gocover
-$(GO_EXC) test $(OPTS) $(TESTOPTS) -covermode="$(COVERMODE)" -coverprofile="$(COVERDIR)/$(subst /,-,$(1)).$(subst $(_space),.,$(NOTARY_BUILDTAGS)).coverage.txt" "$(1)" || exit 1;
+define gocoverParallel
+'$(GO_EXC) test -tags "$(NOTARY_BUILDTAGS)" -coverpkg "$(shell ./coverpkg.sh $(1) $(NOTARY_PKG))" $(OPTS) -covermode="$(COVERMODE)" -coverprofile="$(COVERDIR)/$(subst /,-,$(1)).$(subst $(_space),.,$(NOTARY_BUILDTAGS)).coverage.txt" "$(1)"'
+endef
+
+define gocoverSerial
+$(GO_EXC) test -tags "$(NOTARY_BUILDTAGS)" -coverpkg "$(shell ./coverpkg.sh $(1) $(NOTARY_PKG))" $(OPTS) -covermode="$(COVERMODE)" -coverprofile="$(COVERDIR)/$(subst /,-,$(1)).$(subst $(_space),.,$(NOTARY_BUILDTAGS)).coverage.txt" "$(1)" || exit 1;
 endef
 
 gen-cover: go_version
 	@mkdir -p "$(COVERDIR)"
-	$(foreach PKG,$(PKGS),$(call gocover,$(PKG)))
+ifeq ($(PARALLEL), yes)
+	parallel -j 4 --halt now,fail=1 ::: $(foreach PKG,$(PKGS),$(call gocoverParallel,$(PKG)))
+else
+	$(foreach PKG,$(PKGS),$(call gocoverSerial,$(PKG)))
+endif
 	rm -f "$(COVERDIR)"/*testutils*.coverage.txt
 
 # Generates the cover binaries and runs them all in serial, so this can be used
 # run all tests with a yubikey without any problems
 cover: GO_EXC := go
-       OPTS = -tags "${NOTARY_BUILDTAGS}" -coverpkg "$(shell ./coverpkg.sh $(1) $(NOTARY_PKG))"
 cover: gen-cover covmerge
 	@go tool cover -html="$(COVERPROFILE)"
 
 # Generates the cover binaries and runs them all in serial, so this can be used
 # run all tests with a yubikey without any problems
-ci: OPTS = -tags "${NOTARY_BUILDTAGS}" -race -coverpkg "$(shell ./coverpkg.sh $(1) $(NOTARY_PKG))"
+ci: OPTS = -race
     GO_EXC := godep go
 # Codecov knows how to merge multiple coverage files, so covmerge is not needed
 ci: gen-cover

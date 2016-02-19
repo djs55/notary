@@ -30,6 +30,7 @@ dependencies:
       gvm use stable &&
       mkdir -p "$(dirname $BASE_STABLE)" &&
       cp -R "$CHECKOUT" "$BASE_STABLE"
+    - sudo apt-get update; sudo apt-get install parallel
 
   override:
   # Install dependencies for every copied clone/go version
