@@ -103,8 +103,10 @@ func (rb *repoBuilder) BootstrapNewBuilder() RepoBuilder {
 	rootChecksummer := rb.rootChecksummer
 
 	if rb.repo.Root != nil {
-		roleObj := rb.repo.Root.GetRole(data.CanonicalRootRole)
-		rootRole = &roleObj
+		roleObj, err := rb.repo.Root.BuildBaseRole(data.CanonicalRootRole)
+		if err == nil { // this should always be true, since it was already validated
+			rootRole = &roleObj
+		}
 	}
 	if rb.repo.Snapshot != nil {
 		rootChecksummer = rb.repo.Snapshot.Signed.Meta[data.CanonicalRootRole]
@@ -130,6 +132,7 @@ func (rb *repoBuilder) Load(roleName string, content []byte, minVersion int) err
 
 // LoadRoot loads a root if one has not been loaded
 func (rb *repoBuilder) LoadRoot(content []byte, minVersion int) error {
+	roleName := data.CanonicalRootRole
 	switch {
 	case rb.repo.Root != nil:
 		return ErrInvalidBuilderInput{"msg: root has already been loaded"}
@@ -139,7 +142,7 @@ func (rb *repoBuilder) LoadRoot(content []byte, minVersion int) error {
 		return ErrBuildDone{}
 	}
 
-	signedObj, err := rb.bytesToSigned(data.CanonicalRootRole, content, rb.rootChecksummer)
+	signedObj, err := rb.bytesToSigned(roleName, content, rb.rootChecksummer)
 	if err != nil {
 		return err
 	}
@@ -155,8 +158,12 @@ func (rb *repoBuilder) LoadRoot(content []byte, minVersion int) error {
 		return err
 	}
 
+	rootRole, err := signedRoot.BuildBaseRole(roleName)
+	if err != nil { // this should never happen, since it's already been validated
+		return err
+	}
 	// validate that the signatures for the root are consistent with its own definitions
-	if err := signed.Verify(signedObj, signedRoot.GetRole(data.CanonicalRootRole), minVersion); err != nil {
+	if err := signed.Verify(signedObj, rootRole, minVersion); err != nil {
 		return err
 	}
 
@@ -196,8 +203,12 @@ func (rb *repoBuilder) LoadTimestamp(content []byte, minVersion int) error {
 	case rb.finished:
 		return ErrBuildDone{}
 	}
+	timestampRole, err := rb.repo.Root.BuildBaseRole(roleName)
+	if err != nil { // this should never happen, since it's already been validated
+		return err
+	}
 
-	signedObj, err := rb.bytesToSignedAndValidateSigs(rb.repo.Root.GetRole(roleName), content, minVersion)
+	signedObj, err := rb.bytesToSignedAndValidateSigs(timestampRole, content, minVersion)
 	if err != nil {
 		return err
 	}
@@ -223,8 +234,12 @@ func (rb *repoBuilder) LoadSnapshot(content []byte, minVersion int) error {
 	case rb.finished:
 		return ErrBuildDone{}
 	}
+	snapshotRole, err := rb.repo.Root.BuildBaseRole(roleName)
+	if err != nil { // this should never happen, since it's already been validated
+		return err
+	}
 
-	signedObj, err := rb.bytesToSignedAndValidateSigs(rb.repo.Root.GetRole(roleName), content, minVersion)
+	signedObj, err := rb.bytesToSignedAndValidateSigs(snapshotRole, content, minVersion)
 	if err != nil {
 		return err
 	}
@@ -250,8 +265,12 @@ func (rb *repoBuilder) LoadTargets(content []byte, minVersion int) error {
 	case rb.finished:
 		return ErrBuildDone{}
 	}
+	targetsRole, err := rb.repo.Root.BuildBaseRole(roleName)
+	if err != nil { // this should never happen, since it's already been validated
+		return err
+	}
 
-	signedObj, err := rb.bytesToSignedAndValidateSigs(rb.repo.Root.GetRole(roleName), content, minVersion)
+	signedObj, err := rb.bytesToSignedAndValidateSigs(targetsRole, content, minVersion)
 	if err != nil {
 		return err
 	}
@@ -279,7 +298,6 @@ func (rb *repoBuilder) LoadDelegation(roleName string, content []byte, minVersio
 	case rb.finished:
 		return ErrBuildDone{}
 	}
-
 	delegationRole, err := rb.repo.GetDelegationRole(roleName)
 	if err != nil {
 		return err
