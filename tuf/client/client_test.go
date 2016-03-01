@@ -25,7 +25,7 @@ func TestRotation(t *testing.T) {
 	cache := store.NewMemoryStore(nil)
 
 	// Generate initial root key and role and add to key DB
-	rootKey, err := signer.Create("root", data.ED25519Key)
+	rootKey, err := signer.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err, "Error creating root key")
 	rootRole, err := data.NewRole("root", 1, []string{rootKey.ID()}, nil)
 	assert.NoError(t, err, "Error creating root role")
@@ -39,7 +39,7 @@ func TestRotation(t *testing.T) {
 	repo.Root = originalRoot
 
 	// Generate new key and role.
-	replacementKey, err := signer.Create("root", data.ED25519Key)
+	replacementKey, err := signer.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err, "Error creating replacement root key")
 	replacementRole, err := data.NewRole("root", 1, []string{replacementKey.ID()}, nil)
 	assert.NoError(t, err, "Error creating replacement root role")
@@ -87,7 +87,7 @@ func TestRotationNewSigMissing(t *testing.T) {
 	cache := store.NewMemoryStore(nil)
 
 	// Generate initial root key and role and add to key DB
-	rootKey, err := signer.Create("root", data.ED25519Key)
+	rootKey, err := signer.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err, "Error creating root key")
 	rootRole, err := data.NewRole("root", 1, []string{rootKey.ID()}, nil)
 	assert.NoError(t, err, "Error creating root role")
@@ -101,7 +101,7 @@ func TestRotationNewSigMissing(t *testing.T) {
 	repo.Root = originalRoot
 
 	// Generate new key and role.
-	replacementKey, err := signer.Create("root", data.ED25519Key)
+	replacementKey, err := signer.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err, "Error creating replacement root key")
 	replacementRole, err := data.NewRole("root", 1, []string{replacementKey.ID()}, nil)
 	assert.NoError(t, err, "Error creating replacement root role")
@@ -150,7 +150,7 @@ func TestRotationOldSigMissing(t *testing.T) {
 	cache := store.NewMemoryStore(nil)
 
 	// Generate initial root key and role and add to key DB
-	rootKey, err := signer.Create("root", data.ED25519Key)
+	rootKey, err := signer.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err, "Error creating root key")
 	rootRole, err := data.NewRole("root", 1, []string{rootKey.ID()}, nil)
 	assert.NoError(t, err, "Error creating root role")
@@ -164,7 +164,7 @@ func TestRotationOldSigMissing(t *testing.T) {
 	repo.Root = originalRoot
 
 	// Generate new key and role.
-	replacementKey, err := signer.Create("root", data.ED25519Key)
+	replacementKey, err := signer.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err, "Error creating replacement root key")
 	replacementRole, err := data.NewRole("root", 1, []string{replacementKey.ID()}, nil)
 	assert.NoError(t, err, "Error creating replacement root role")
@@ -406,7 +406,7 @@ func TestDownloadTargetsDeepHappy(t *testing.T) {
 
 	for _, r := range delegations {
 		// create role
-		k, err := cs.Create(r, data.ED25519Key)
+		k, err := cs.Create(r, "docker.com/notary", data.ED25519Key)
 		assert.NoError(t, err)
 
 		// add role to repo

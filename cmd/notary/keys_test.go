@@ -296,7 +296,7 @@ func setUpRepo(t *testing.T, tempBaseDir, gun string, ret passphrase.Retriever) 
 		tempBaseDir, gun, ts.URL, http.DefaultTransport, ret)
 	assert.NoError(t, err, "error creating repo: %s", err)
 
-	rootPubKey, err := repo.CryptoService.Create("root", data.ECDSAKey)
+	rootPubKey, err := repo.CryptoService.Create("root", "", data.ECDSAKey)
 	assert.NoError(t, err, "error generating root key: %s", err)
 
 	err = repo.Initialize(rootPubKey.ID())

@@ -25,7 +25,7 @@ func (mts *FailingCryptoService) Sign(keyIDs []string, _ []byte) ([]data.Signatu
 	return sigs, nil
 }
 
-func (mts *FailingCryptoService) Create(_, _ string) (data.PublicKey, error) {
+func (mts *FailingCryptoService) Create(_, _, _ string) (data.PublicKey, error) {
 	return mts.testKey, nil
 }
 
@@ -33,7 +33,7 @@ func (mts *FailingCryptoService) ListKeys(role string) []string {
 	return []string{mts.testKey.ID()}
 }
 
-func (mts *FailingCryptoService) AddKey(key data.PrivateKey, role string) error {
+func (mts *FailingCryptoService) AddKey(role, gun string, key data.PrivateKey) error {
 	return nil
 }
 
@@ -76,11 +76,11 @@ func (mts *MockCryptoService) Sign(keyIDs []string, _ []byte) ([]data.Signature,
 	return sigs, nil
 }
 
-func (mts *MockCryptoService) Create(_ string, _ string) (data.PublicKey, error) {
+func (mts *MockCryptoService) Create(_, _, _ string) (data.PublicKey, error) {
 	return mts.testKey, nil
 }
 
-func (mts *MockCryptoService) AddKey(key data.PrivateKey, role string) error {
+func (mts *MockCryptoService) AddKey(role, gun string, key data.PrivateKey) error {
 	return nil
 }
 
@@ -148,14 +148,14 @@ func (mts *StrictMockCryptoService) ListAllKeys() map[string]string {
 	}
 }
 
-func (mts *StrictMockCryptoService) AddKey(key data.PrivateKey, role string) error {
+func (mts *StrictMockCryptoService) AddKey(role, gun string, key data.PrivateKey) error {
 	return nil
 }
 
 // Test signing and ensure the expected signature is added
 func TestBasicSign(t *testing.T) {
 	cs := NewEd25519()
-	key, err := cs.Create("root", data.ED25519Key)
+	key, err := cs.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err)
 	testData := data.Signed{}
 
@@ -175,7 +175,7 @@ func TestBasicSign(t *testing.T) {
 // with the same key ID
 func TestReSign(t *testing.T) {
 	cs := NewEd25519()
-	key, err := cs.Create("root", data.ED25519Key)
+	key, err := cs.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err)
 	testData := data.Signed{}
 
@@ -197,7 +197,7 @@ func TestMultiSign(t *testing.T) {
 	cs := NewEd25519()
 	testData := data.Signed{}
 
-	key1, err := cs.Create("root", data.ED25519Key)
+	key1, err := cs.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err)
 	Sign(cs, &testData, key1)
 
@@ -206,7 +206,7 @@ func TestMultiSign(t *testing.T) {
 	// that the signature for key1 is left intact and the signature
 	// for key2 is added
 	cs = NewEd25519()
-	key2, err := cs.Create("root", data.ED25519Key)
+	key2, err := cs.Create("root", "", data.ED25519Key)
 	assert.NoError(t, err)
 	Sign(
 		cs,
