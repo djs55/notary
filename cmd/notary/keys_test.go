@@ -250,7 +250,11 @@ func TestRotateKeyInvalidRoles(t *testing.T) {
 	for _, role := range invalids {
 		for _, serverManaged := range []bool{true, false} {
 			k := &keyCommander{
-				configGetter:           func() (*viper.Viper, error) { return viper.New(), nil },
+				configGetter: func() (*viper.Viper, error) {
+					v := viper.New()
+					v.Set("trust_pinning", notary.TrustPinConfig{TOFU: true})
+					return v, nil
+				},
 				getRetriever:           func() passphrase.Retriever { return passphrase.ConstantRetriever("pass") },
 				rotateKeyRole:          role,
 				rotateKeyServerManaged: serverManaged,
@@ -271,7 +275,11 @@ func TestRotateKeyInvalidRoles(t *testing.T) {
 func TestRotateKeyTargetCannotBeServerManaged(t *testing.T) {
 	setUp(t)
 	k := &keyCommander{
-		configGetter:           func() (*viper.Viper, error) { return viper.New(), nil },
+		configGetter: func() (*viper.Viper, error) {
+			v := viper.New()
+			v.Set("trust_pinning", notary.TrustPinConfig{TOFU: true})
+			return v, nil
+		},
 		getRetriever:           func() passphrase.Retriever { return passphrase.ConstantRetriever("pass") },
 		rotateKeyRole:          data.CanonicalTargetsRole,
 		rotateKeyServerManaged: true,
@@ -285,7 +293,11 @@ func TestRotateKeyTargetCannotBeServerManaged(t *testing.T) {
 func TestRotateKeyTimestampCannotBeLocallyManaged(t *testing.T) {
 	setUp(t)
 	k := &keyCommander{
-		configGetter:           func() (*viper.Viper, error) { return viper.New(), nil },
+		configGetter: func() (*viper.Viper, error) {
+			v := viper.New()
+			v.Set("trust_pinning", notary.TrustPinConfig{TOFU: true})
+			return v, nil
+		},
 		getRetriever:           func() passphrase.Retriever { return passphrase.ConstantRetriever("pass") },
 		rotateKeyRole:          data.CanonicalTimestampRole,
 		rotateKeyServerManaged: false,
@@ -331,7 +343,7 @@ func setUpRepo(t *testing.T, tempBaseDir, gun string, ret passphrase.Retriever) 
 	ts := httptest.NewServer(server.RootHandler(nil, ctx, cryptoService, nil, nil))
 
 	repo, err := client.NewNotaryRepository(
-		tempBaseDir, gun, ts.URL, http.DefaultTransport, ret)
+		tempBaseDir, gun, ts.URL, http.DefaultTransport, ret, notary.TrustPinConfig{TOFU: true})
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	rootPubKey, err := repo.CryptoService.Create("root", data.ECDSAKey)
@@ -366,6 +378,7 @@ func TestRotateKeyRemoteServerManagesKey(t *testing.T) {
 				v := viper.New()
 				v.SetDefault("trust_dir", tempBaseDir)
 				v.SetDefault("remote_server.url", ts.URL)
+				v.SetDefault("trust_pinning", notary.TrustPinConfig{TOFU: true})
 				return v, nil
 			},
 			getRetriever:           func() passphrase.Retriever { return ret },
@@ -373,7 +386,7 @@ func TestRotateKeyRemoteServerManagesKey(t *testing.T) {
 		}
 		assert.NoError(t, k.keysRotate(&cobra.Command{}, []string{gun, role, "-r"}))
 
-		repo, err := client.NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, ret)
+		repo, err := client.NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, ret, notary.TrustPinConfig{TOFU: true})
 		assert.NoError(t, err, "error creating repo: %s", err)
 
 		cl, err := repo.GetChangelist()
@@ -397,7 +410,6 @@ func TestRotateKeyRemoteServerManagesKey(t *testing.T) {
 				assert.True(t, ok)
 			}
 		}
-
 	}
 }
 
@@ -421,6 +433,7 @@ func TestRotateKeyBothKeys(t *testing.T) {
 			v := viper.New()
 			v.SetDefault("trust_dir", tempBaseDir)
 			v.SetDefault("remote_server.url", ts.URL)
+			v.Set("trust_pinning", notary.TrustPinConfig{TOFU: true})
 			return v, nil
 		},
 		getRetriever: func() passphrase.Retriever { return ret },
@@ -428,7 +441,7 @@ func TestRotateKeyBothKeys(t *testing.T) {
 	assert.NoError(t, k.keysRotate(&cobra.Command{}, []string{gun, data.CanonicalTargetsRole}))
 	assert.NoError(t, k.keysRotate(&cobra.Command{}, []string{gun, data.CanonicalSnapshotRole}))
 
-	repo, err := client.NewNotaryRepository(tempBaseDir, gun, ts.URL, nil, ret)
+	repo, err := client.NewNotaryRepository(tempBaseDir, gun, ts.URL, nil, ret, notary.TrustPinConfig{TOFU: true})
 	assert.NoError(t, err, "error creating repo: %s", err)
 
 	cl, err := repo.GetChangelist()

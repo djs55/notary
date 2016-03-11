@@ -192,7 +192,7 @@ func createRepoAndKey(t *testing.T, rootType, tempBaseDir, gun, url string) (
 
 	rec := newRoleRecorder()
 	repo, err := NewNotaryRepository(
-		tempBaseDir, gun, url, http.DefaultTransport, rec.retriever)
+		tempBaseDir, gun, url, http.DefaultTransport, rec.retriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repo: %s", err)
 
 	rootPubKey, err := repo.CryptoService.Create("root", rootType)
@@ -223,7 +223,7 @@ func newRepoToTestRepo(t *testing.T, existingRepo *NotaryRepository, newDir bool
 	rec := newRoleRecorder()
 	repo, err := NewNotaryRepository(
 		repoDir, existingRepo.gun, existingRepo.baseURL,
-		http.DefaultTransport, rec.retriever)
+		http.DefaultTransport, rec.retriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repository: %s", err)
 	if err != nil && newDir {
 		defer os.RemoveAll(repoDir)
@@ -575,7 +575,7 @@ func testInitRepoAttemptsExceeded(t *testing.T, rootType string) {
 	defer ts.Close()
 
 	retriever := passphrase.ConstantRetriever("password")
-	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever)
+	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repo: %s", err)
 	rootPubKey, err := repo.CryptoService.Create("root", rootType)
 	require.NoError(t, err, "error generating root key: %s", err)
@@ -583,7 +583,7 @@ func testInitRepoAttemptsExceeded(t *testing.T, rootType string) {
 	retriever = passphrase.ConstantRetriever("incorrect password")
 	// repo.CryptoService’s FileKeyStore caches the unlocked private key, so to test
 	// private key unlocking we need a new repo instance.
-	repo, err = NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever)
+	repo, err = NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repo: %s", err)
 	err = repo.Initialize(rootPubKey.ID())
 	require.EqualError(t, err, trustmanager.ErrAttemptsExceeded{}.Error())
@@ -613,14 +613,14 @@ func testInitRepoPasswordInvalid(t *testing.T, rootType string) {
 	defer ts.Close()
 
 	retriever := passphrase.ConstantRetriever("password")
-	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever)
+	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, retriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repo: %s", err)
 	rootPubKey, err := repo.CryptoService.Create("root", rootType)
 	require.NoError(t, err, "error generating root key: %s", err)
 
 	// repo.CryptoService’s FileKeyStore caches the unlocked private key, so to test
 	// private key unlocking we need a new repo instance.
-	repo, err = NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, giveUpPassphraseRetriever)
+	repo, err = NewNotaryRepository(tempBaseDir, gun, ts.URL, http.DefaultTransport, giveUpPassphraseRetriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repo: %s", err)
 	err = repo.Initialize(rootPubKey.ID())
 	require.EqualError(t, err, trustmanager.ErrPasswordInvalid{}.Error())
@@ -1645,7 +1645,7 @@ func TestPublishUninitializedRepo(t *testing.T) {
 	defer os.RemoveAll(tempBaseDir)
 
 	repo, err := NewNotaryRepository(tempBaseDir, gun, ts.URL,
-		http.DefaultTransport, passphraseRetriever)
+		http.DefaultTransport, passphraseRetriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repository: %s", err)
 	err = repo.Publish()
 	require.Error(t, err)
@@ -2009,7 +2009,7 @@ func TestPublishSnapshotLocalKeysCreatedFirst(t *testing.T) {
 	defer ts.Close()
 
 	repo, err := NewNotaryRepository(
-		tempBaseDir, gun, ts.URL, http.DefaultTransport, passphraseRetriever)
+		tempBaseDir, gun, ts.URL, http.DefaultTransport, passphraseRetriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repo: %s", err)
 
 	cs := cryptoservice.NewCryptoService(gun,
@@ -2751,7 +2751,7 @@ func TestRemoteServerUnavailableNoLocalCache(t *testing.T) {
 	defer ts.Close()
 
 	repo, err := NewNotaryRepository(tempBaseDir, "docker.com/notary",
-		ts.URL, http.DefaultTransport, passphraseRetriever)
+		ts.URL, http.DefaultTransport, passphraseRetriever, notary.TrustPinConfig{TOFU: true})
 	require.NoError(t, err, "error creating repo: %s", err)
 
 	_, err = repo.ListTargets(data.CanonicalTargetsRole)
@@ -3061,6 +3061,7 @@ func TestBootstrapClientBadURL(t *testing.T) {
 		"http://localhost:9998",
 		http.DefaultTransport,
 		passphraseRetriever,
+		notary.TrustPinConfig{TOFU: true},
 	)
 	require.NoError(t, err, "error creating repo: %s", err)
 
@@ -3090,6 +3091,7 @@ func TestBootstrapClientInvalidURL(t *testing.T) {
 		"#!*)&!)#*^%!#)%^!#",
 		http.DefaultTransport,
 		passphraseRetriever,
+		notary.TrustPinConfig{TOFU: true},
 	)
 	require.NoError(t, err, "error creating repo: %s", err)
 

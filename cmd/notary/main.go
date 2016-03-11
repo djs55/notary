@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/docker/notary"
 	"github.com/docker/notary/passphrase"
 	"github.com/docker/notary/version"
 	homedir "github.com/mitchellh/go-homedir"
@@ -96,6 +97,7 @@ func (n *notaryCommander) parseConfig() (*viper.Viper, error) {
 	// Setup the configuration details into viper
 	config.SetDefault("trust_dir", defaultTrustDir)
 	config.SetDefault("remote_server", map[string]string{"url": defaultServerURL})
+	config.SetDefault("trust_pinning", notary.TrustPinConfig{TOFU: true})
 
 	// Find and read the config file
 	if err := config.ReadInConfig(); err != nil {

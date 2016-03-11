@@ -7,9 +7,12 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/docker/notary"
 	"github.com/docker/notary/trustmanager"
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
+	"github.com/docker/notary/tuf/utils"
+	"strings"
 )
 
 // ErrValidationFail is returned when there is no valid trusted certificates
@@ -45,25 +48,35 @@ that list is non-empty means that we've already seen this repository before, and
 have a list of trusted certificates for it. In this case, we use this list of
 certificates to attempt to validate this root file.
 
-If the previous validation succeeds, or in the case where we found no trusted
-certificates for this particular GUN, we check the integrity of the root by
+If the previous validation succeeds, we check the integrity of the root by
 making sure that it is validated by itself. This means that we will attempt to
 validate the root data with the certificates that are included in the root keys
 themselves.
 
-If this last steps succeeds, we attempt to do root rotation, by ensuring that
-we only trust the certificates that are present in the new root.
+However, if we do not have any current trusted certificates for this GUN, we
+check if there are any pinned certificates specified in the trust_pinning section
+of the notary client config.  If this section specifies a Certs section with this
+GUN, we attempt to validate that the certificates present in the downloaded root
+file match the pinned ID.
 
-This mechanism of operation is essentially Trust On First Use (TOFU): if we
-have never seen a certificate for a particular CN, we trust it. If later we see
-a different certificate for that certificate, we return an ErrValidationFailed error.
+If the Certs section has no match, we check if the trust_pinning section specifies
+a CA section specified in the config for this GUN.  If so, we check that the
+specified CA is valid and has signed a certificate included in the downloaded
+root file.
+
+If both the Certs and CA configs do not match our GUN, we fall back to the TOFU
+section in the config: if true, we trust certificates specified in the root for
+this GUN. If later we see a different certificate for that certificate, we return
+an ErrValidationFailed error.
 
 Note that since we only allow trust data to be downloaded over an HTTPS channel
 we are using the current public PKI to validate the first download of the certificate
 adding an extra layer of security over the normal (SSH style) trust model.
 We shall call this: TOFUS.
+
+Validation failure at any step will result in an ErrValidationFailed error.
 */
-func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun string) error {
+func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun string, trustPinning notary.TrustPinConfig) error {
 	logrus.Debugf("entered ValidateRoot with dns: %s", gun)
 	signedRoot, err := data.RootFromSigned(root)
 	if err != nil {
@@ -100,6 +113,39 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 		}
 	} else {
 		logrus.Debugf("found no currently valid root certificates for %s", gun)
+		logrus.Debugf("using trust_pinning config to bootstrap trust: %v", trustPinning)
+
+		if len(trustPinning.CA) > 0 {
+			for caGunPrefix := range trustPinning.CA {
+				if strings.HasPrefix(gun, caGunPrefix) {
+					// hurray?  What to do with ca path
+				}
+			}
+
+		}
+
+		if len(trustPinning.Certs) > 0 {
+			for certGun, pinnedIDs := range trustPinning.Certs {
+				if certGun == gun {
+					for _, cert := range allValidCerts {
+						certID, err := trustmanager.FingerprintCert(cert)
+						if err != nil {
+							continue
+						}
+						if utils.StrSliceContains(pinnedIDs, certID) {
+							// hurray :)
+						}
+					}
+				}
+			}
+
+		}
+
+		// If we reach this if-case, it means that we didn't have any local certs for this gun,
+		// nor did we specify any pinned CA or Certs in trust_pinning
+		if !trustPinning.TOFU {
+			return &ErrValidationFail{Reason: "could not bootstrap trust without trust_pinning configuration"}
+		}
 	}
 
 	// Validate the integrity of the new root (does it have valid signatures)
@@ -142,7 +188,7 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 	return nil
 }
 
-// validRootLeafCerts returns a list of non-exipired, non-sha1 certificates whose
+// validRootLeafCerts returns a list of non-expired, non-sha1 certificates whose
 // Common-Names match the provided GUN
 func validRootLeafCerts(root *data.SignedRoot, gun string) ([]*x509.Certificate, error) {
 	// Get a list of all of the leaf certificates present in root
@@ -243,7 +289,7 @@ func parseAllCerts(signedRoot *data.SignedRoot) (map[string]*x509.Certificate, m
 	return leafCerts, intCerts
 }
 
-// certsToRemove returns all the certifificates from oldCerts that aren't present
+// certsToRemove returns all the certificates from oldCerts that aren't present
 // in newCerts
 func certsToRemove(oldCerts, newCerts []*x509.Certificate) map[string]*x509.Certificate {
 	certsToRemove := make(map[string]*x509.Certificate)
