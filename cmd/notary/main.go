@@ -110,6 +110,13 @@ func (n *notaryCommander) parseConfig() (*viper.Viper, error) {
 		}
 	}
 
+	// Check that the trust_pinning section was a valid notary.TrustPinConfig object
+	// We parse this here so that parsing and usage are separated in code, we then use type assertions later
+	if _, ok := config.Get("trust_pinning").(notary.TrustPinConfig); !ok {
+		// Return a noisy error if the user passed an invalid trust_pinning section instead of sticking to default TOFUS
+		return nil, fmt.Errorf("error parsing trust_pinning section of config")
+	}
+
 	// At this point we either have the default value or the one set by the config.
 	// Either way, some command-line flags have precedence and overwrites the value
 	if n.trustDir != "" {

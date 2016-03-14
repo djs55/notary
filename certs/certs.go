@@ -11,7 +11,6 @@ import (
 	"github.com/docker/notary/trustmanager"
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
-	"github.com/docker/notary/tuf/utils"
 	"strings"
 )
 
@@ -59,12 +58,12 @@ of the notary client config.  If this section specifies a Certs section with thi
 GUN, we attempt to validate that the certificates present in the downloaded root
 file match the pinned ID.
 
-If the Certs section has no match, we check if the trust_pinning section specifies
-a CA section specified in the config for this GUN.  If so, we check that the
-specified CA is valid and has signed a certificate included in the downloaded
+If the Certs section is empty are empty for this GUN, we check if the trust_pinning
+section specifies a CA section specified in the config for this GUN.  If so, we check
+that the specified CA is valid and has signed a certificate included in the downloaded
 root file.
 
-If both the Certs and CA configs do not match our GUN, we fall back to the TOFU
+If both the Certs and CA configs do not match this GUN, we fall back to the TOFU
 section in the config: if true, we trust certificates specified in the root for
 this GUN. If later we see a different certificate for that certificate, we return
 an ErrValidationFailed error.
@@ -114,41 +113,70 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 	} else {
 		logrus.Debugf("found no currently valid root certificates for %s", gun)
 		logrus.Debugf("using trust_pinning config to bootstrap trust: %v", trustPinning)
-
+		// First, check if the CA section is specified.  If so, we use this CA to bootstrap trust:
+		// We attempt to add the CA PEM if it's valid, and all certs to our certStore that are from this CA
 		if len(trustPinning.CA) > 0 {
-			for caGunPrefix := range trustPinning.CA {
+			for caGunPrefix, caFilepath := range trustPinning.CA {
 				if strings.HasPrefix(gun, caGunPrefix) {
-					// hurray?  What to do with ca path
+					// Try to add the CA cert to our certificate store,
+					// and use it to validate certs in the root.json later
+					caCert, err := trustmanager.LoadCertFromFile(caFilepath)
+					if err != nil {
+						return &ErrValidationFail{Reason: "failed to load specified CA trust pin"}
+					}
+					if err = trustmanager.ValidateCertificate(caCert); err != nil {
+						return &ErrValidationFail{Reason: "failed to validate specified CA trust pin"}
+					}
+					if err = certStore.AddCertFromFile(caFilepath); err != nil {
+						return &ErrValidationFail{Reason: "failed to add CA trust pin to certificate store"}
+					}
+					opts, err := certStore.GetVerifyOptions(gun)
+					if err != nil {
+						return &ErrValidationFail{Reason: "failed to add CA trust pin to certificate store for verification"}
+					}
+					// Now only consider certificates that are direct children from this CA cert, overwriting allValidCerts
+					validCertsForCA := []*x509.Certificate{}
+					for _, cert := range allValidCerts {
+						if _, err := cert.Verify(opts); err == nil {
+							validCertsForCA = append(validCertsForCA, cert)
+						}
+					}
+					allValidCerts = validCertsForCA
 				}
 			}
-
-		}
-
-		if len(trustPinning.Certs) > 0 {
-			for certGun, pinnedIDs := range trustPinning.Certs {
+		} else if len(trustPinning.Certs) > 0 {
+			for certGun, pinnedID := range trustPinning.Certs {
 				if certGun == gun {
+					foundCertIDMatch := false
 					for _, cert := range allValidCerts {
+						// Try to match by CertID or public key ID
 						certID, err := trustmanager.FingerprintCert(cert)
 						if err != nil {
 							continue
 						}
-						if utils.StrSliceContains(pinnedIDs, certID) {
-							// hurray :)
+						if certID == pinnedID {
+							// If we found our pinned cert, only use that one certificate as allValidCerts for verification
+							allValidCerts = []*x509.Certificate{cert}
+							foundCertIDMatch = true
+							break
 						}
+					}
+					if !foundCertIDMatch {
+						return &ErrValidationFail{Reason: "failed to find matching certificate ID "}
 					}
 				}
 			}
-
-		}
-
-		// If we reach this if-case, it means that we didn't have any local certs for this gun,
-		// nor did we specify any pinned CA or Certs in trust_pinning
-		if !trustPinning.TOFU {
+		} else if !trustPinning.TOFU {
+			// If we reach this if-case, it means that we didn't find any local certs for this GUN,
+			// nor did we specify any specifications for how to bootstrap trust in trust_pinning using TOFU
+			// If TOFU is true, we fall through and consider all certificates
 			return &ErrValidationFail{Reason: "could not bootstrap trust without trust_pinning configuration"}
 		}
 	}
 
 	// Validate the integrity of the new root (does it have valid signatures)
+	// Note that allValidCerts is guaranteed to be unchanged only if we had prior cert data for this GUN or enabled TOFUS
+	// If we attempted to pin a certain certificate or CA, allValidCerts could have been pruned accordingly
 	err = signed.VerifyRoot(root, 0, trustmanager.CertsToKeys(allValidCerts))
 	if err != nil {
 		logrus.Debugf("failed to verify TUF data for: %s, %v", gun, err)
@@ -157,7 +185,7 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 
 	// Getting here means A) we had trusted certificates and both the
 	// old and new validated this root; or B) we had no trusted certificates but
-	// the new set of certificates has integrity (self-signed)
+	// the new set of certificates passed our specified trust_pinning or default TOFUS
 	logrus.Debugf("entering root certificate rotation for: %s", gun)
 
 	// Do root certificate rotation: we trust only the certs present in the new root

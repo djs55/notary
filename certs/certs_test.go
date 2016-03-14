@@ -214,6 +214,35 @@ func TestValidateRoot(t *testing.T) {
 	}
 }
 
+func TestValidateRootWithoutTOFUS(t *testing.T) {
+	var testSignedRoot data.Signed
+	var signedRootBytes bytes.Buffer
+
+	// Temporary directory where test files will be created
+	tempBaseDir, err := ioutil.TempDir("", "notary-test-")
+	defer os.RemoveAll(tempBaseDir)
+	assert.NoError(t, err, "failed to create a temporary directory: %s", err)
+
+	// Create a X509Store
+	trustPath := filepath.Join(tempBaseDir, notary.TrustedCertsDir)
+	certStore, err := trustmanager.NewX509FilteredFileStore(
+		trustPath,
+		trustmanager.FilterCertsExpiredSha1,
+	)
+	assert.NoError(t, err)
+
+	// Execute our template
+	templ, _ := template.New("SignedRSARootTemplate").Parse(signedRSARootTemplate)
+	templ.Execute(&signedRootBytes, SignedRSARootTemplate{RootPem: validPEMEncodedRSARoot})
+
+	// Unmarshal our signedroot
+	json.Unmarshal(signedRootBytes.Bytes(), &testSignedRoot)
+
+	// This call to ValidateRoot will fail since we are explicitly disabling TOFU and have no local certs
+	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{TOFU: false})
+	assert.Error(t, err)
+}
+
 // TestValidateSuccessfulRootRotation runs through a full root certificate rotation
 // We test this with both an RSA and ECDSA root certificate
 func TestValidateSuccessfulRootRotation(t *testing.T) {
