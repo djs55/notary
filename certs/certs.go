@@ -145,9 +145,9 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 				}
 			}
 		} else if len(trustPinning.Certs) > 0 {
+			foundCertIDMatch := false
 			for certGun, pinnedID := range trustPinning.Certs {
 				if certGun == gun {
-					foundCertIDMatch := false
 					for _, cert := range allValidCerts {
 						// Try to match by CertID or public key ID
 						certID, err := trustmanager.FingerprintCert(cert)
@@ -161,10 +161,11 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 							break
 						}
 					}
-					if !foundCertIDMatch {
-						return &ErrValidationFail{Reason: "failed to find matching certificate ID "}
-					}
 				}
+			}
+			// If we didn't find any entries matching our GUN in Certs with a matching certificate ID, fail validation
+			if !foundCertIDMatch {
+				return &ErrValidationFail{Reason: "failed to find matching certificate ID "}
 			}
 		} else if !trustPinning.TOFU {
 			// If we reach this if-case, it means that we didn't find any local certs for this GUN,
