@@ -303,17 +303,59 @@ func TestValidateRootFailuresWithPinnedCert(t *testing.T) {
 	// This call to ValidateRoot should fail due to an incorrect cert ID
 	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{Certs: map[string]string{"docker.com/notary": "ABSOLUTELY NOT A CERT ID"}})
 	assert.Error(t, err)
+	certStore.RemoveAll()
 
 	// This call to ValidateRoot should fail due to an empty cert ID
 	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{Certs: map[string]string{"docker.com/notary": ""}})
 	assert.Error(t, err)
+	certStore.RemoveAll()
 
-	// This call to ValidateRoot should fail due to an invalid gun (even though the cert ID is correct)
-	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{Certs: map[string]string{"not our gun": rootPubKeyID}})
+	// This call to ValidateRoot should fail due to an invalid GUN (even though the cert ID is correct), and TOFUS defaults to false
+	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{Certs: map[string]string{"not_a_gun": rootPubKeyID}, TOFU: false})
 	assert.Error(t, err)
+	certStore.RemoveAll()
 
 	// This call to ValidateRoot should fail due to an invalid cert ID, even though it's a valid key ID for targets
 	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{Certs: map[string]string{"docker.com/notary": targetsPubKeyID}})
+	assert.Error(t, err)
+	certStore.RemoveAll()
+
+	// This call to ValidateRoot should succeed because we fall through to TOFUS even though we have no matching GUNs under Certs
+	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{Certs: map[string]string{"not_a_gun": rootPubKeyID}, TOFU: true})
+	assert.NoError(t, err)
+	certStore.RemoveAll()
+}
+
+func TestValidateRootWithPinnedCA(t *testing.T) {
+	var testSignedRoot data.Signed
+	var signedRootBytes bytes.Buffer
+
+	// Temporary directory where test files will be created
+	tempBaseDir, err := ioutil.TempDir("", "notary-test-")
+	defer os.RemoveAll(tempBaseDir)
+	assert.NoError(t, err, "failed to create a temporary directory: %s", err)
+
+	// Create a X509Store
+	trustPath := filepath.Join(tempBaseDir, notary.TrustedCertsDir)
+	certStore, err := trustmanager.NewX509FilteredFileStore(
+		trustPath,
+		trustmanager.FilterCertsExpiredSha1,
+	)
+	assert.NoError(t, err)
+
+	// Execute our template
+	templ, _ := template.New("SignedRSARootTemplate").Parse(signedRSARootTemplate)
+	templ.Execute(&signedRootBytes, SignedRSARootTemplate{RootPem: validPEMEncodedRSARoot})
+
+	// Unmarshal our signedroot
+	json.Unmarshal(signedRootBytes.Bytes(), &testSignedRoot)
+
+	// This call to ValidateRoot will fail because we have an invalid path for the CA
+	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{CA: map[string]string{"docker.com/notary": filepath.Join(tempBaseDir, "nonexistent")}})
+	assert.Error(t, err)
+
+	// This call to ValidateRoot will fail because we have no valid GUNs to use
+	err = ValidateRoot(certStore, &testSignedRoot, "docker.com/notary", notary.TrustPinConfig{CA: map[string]string{"docker.com/notary": filepath.Join(tempBaseDir, "nonexistent")}})
 	assert.Error(t, err)
 }
 
