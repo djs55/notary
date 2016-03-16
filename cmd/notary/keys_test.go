@@ -252,7 +252,7 @@ func TestRotateKeyInvalidRoles(t *testing.T) {
 			k := &keyCommander{
 				configGetter: func() (*viper.Viper, error) {
 					v := viper.New()
-					v.Set("trust_pinning", notary.TrustPinConfig{TOFU: true})
+					v.Set("trust_pinning.tofu", true)
 					return v, nil
 				},
 				getRetriever:           func() passphrase.Retriever { return passphrase.ConstantRetriever("pass") },
@@ -277,7 +277,7 @@ func TestRotateKeyTargetCannotBeServerManaged(t *testing.T) {
 	k := &keyCommander{
 		configGetter: func() (*viper.Viper, error) {
 			v := viper.New()
-			v.Set("trust_pinning", notary.TrustPinConfig{TOFU: true})
+			v.Set("trust_pinning.tofu", true)
 			return v, nil
 		},
 		getRetriever:           func() passphrase.Retriever { return passphrase.ConstantRetriever("pass") },
@@ -295,7 +295,7 @@ func TestRotateKeyTimestampCannotBeLocallyManaged(t *testing.T) {
 	k := &keyCommander{
 		configGetter: func() (*viper.Viper, error) {
 			v := viper.New()
-			v.Set("trust_pinning", notary.TrustPinConfig{TOFU: true})
+			v.Set("trust_pinning.tofu", true)
 			return v, nil
 		},
 		getRetriever:           func() passphrase.Retriever { return passphrase.ConstantRetriever("pass") },
@@ -378,7 +378,7 @@ func TestRotateKeyRemoteServerManagesKey(t *testing.T) {
 				v := viper.New()
 				v.SetDefault("trust_dir", tempBaseDir)
 				v.SetDefault("remote_server.url", ts.URL)
-				v.SetDefault("trust_pinning", notary.TrustPinConfig{TOFU: true})
+				v.SetDefault("trust_pinning.tofu", true)
 				return v, nil
 			},
 			getRetriever:           func() passphrase.Retriever { return ret },
@@ -433,7 +433,8 @@ func TestRotateKeyBothKeys(t *testing.T) {
 			v := viper.New()
 			v.SetDefault("trust_dir", tempBaseDir)
 			v.SetDefault("remote_server.url", ts.URL)
-			v.Set("trust_pinning", notary.TrustPinConfig{TOFU: true})
+			v.Set("trust_pinning.tofu", true)
+			// won't need a remote server URL, since we are creating local keys
 			return v, nil
 		},
 		getRetriever: func() passphrase.Retriever { return ret },
