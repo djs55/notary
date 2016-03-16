@@ -136,7 +136,7 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 			}
 		} else if utils.ContainsKeyPrefix(trustPinning.CA, gun) {
 			// Next, check if the CA section is specified with a GUN that prefixes our GUN.  If so, we use this CA to bootstrap trust:
-			// We attempt to add the CA PEM if it's valid, and all certs to our certStore that are from this CA
+			// We attempt to use the CA PEM if it's valid to add all certs to our certStore that are signed from this cert
 			if len(trustPinning.CA) > 0 {
 				for caGunPrefix, caFilepath := range trustPinning.CA {
 					if strings.HasPrefix(gun, caGunPrefix) {
@@ -149,17 +149,31 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 						if err = trustmanager.ValidateCertificate(caCert); err != nil {
 							return &ErrValidationFail{Reason: "failed to validate specified CA trust pin"}
 						}
-						if err = certStore.AddCertFromFile(caFilepath); err != nil {
-							return &ErrValidationFail{Reason: "failed to add CA trust pin to certificate store"}
-						}
-						opts, err := certStore.GetVerifyOptions(gun)
-						if err != nil {
-							return &ErrValidationFail{Reason: "failed to add CA trust pin to certificate store for verification"}
-						}
 						// Now only consider certificates that are direct children from this CA cert, overwriting allValidCerts
+						caRootPool := x509.NewCertPool()
+						caRootPool.AddCert(caCert)
 						validCertsForCA := []*x509.Certificate{}
+						if err != nil {
+							logrus.Debugf("error retrieving valid leaf certificates for: %s, %v", gun, err)
+							return &ErrValidationFail{Reason: "unable to retrieve valid leaf certificates"}
+						}
 						for _, cert := range allValidCerts {
-							if _, err := cert.Verify(opts); err == nil {
+							certID, err := trustmanager.FingerprintCert(cert)
+							if err != nil {
+								logrus.Debugf("error while fingerprinting certificate with keyID: %v", err)
+								continue
+							}
+							// Use intermediate certificates included in the root TUF metadata for our validation
+							caIntPool := x509.NewCertPool()
+							_, intermediateCerts := parseAllCerts(signedRoot)
+							if intermediateCertList, ok := intermediateCerts[certID]; ok {
+								for _, intCert := range intermediateCertList {
+									caIntPool.AddCert(intCert)
+								}
+							}
+							// Attempt to find a valid certificate chain from the leaf cert to CA root
+							// Use this certificate if such a valid chain exists (possibly using intermediates)
+							if _, err = cert.Verify(x509.VerifyOptions{Roots: caRootPool, Intermediates: caIntPool}); err == nil {
 								validCertsForCA = append(validCertsForCA, cert)
 							}
 						}
