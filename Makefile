@@ -1,6 +1,8 @@
 # Set an output prefix, which is the local directory if not specified
 PREFIX?=$(shell pwd)
 
+CGO_CFLAGS="-I/usr/local/Cellar/libtool/2.4.6/include/"
+
 # Populate version variables
 # Add to compile time flags
 NOTARY_PKG := github.com/docker/notary
@@ -11,8 +13,8 @@ ifneq ($(GITUNTRACKEDCHANGES),)
 GITCOMMIT := $(GITCOMMIT)-dirty
 endif
 CTIMEVAR=-X $(NOTARY_PKG)/version.GitCommit=$(GITCOMMIT) -X $(NOTARY_PKG)/version.NotaryVersion=$(NOTARY_VERSION)
-GO_LDFLAGS=-ldflags "-w $(CTIMEVAR)"
-GO_LDFLAGS_STATIC=-ldflags "-w $(CTIMEVAR) -extldflags -static"
+GO_LDFLAGS=-ldflags "-w $(CTIMEVAR) -s"
+GO_LDFLAGS_STATIC=-ldflags "-w $(CTIMEVAR) -extldflags -static -s"
 GOOSES = darwin freebsd linux
 GOARCHS = amd64
 NOTARY_BUILDTAGS ?= pkcs11

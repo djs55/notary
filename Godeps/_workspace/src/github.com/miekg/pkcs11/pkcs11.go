@@ -11,7 +11,8 @@ package pkcs11
 // * CK_ULONG never overflows an Go int
 
 /*
-#cgo LDFLAGS: -lltdl
+#cgo LDFLAGS: -L/usr/local/lib -lltdl
+#cgo CFLAGS: -I/usr/local/include
 #define CK_PTR *
 #ifndef NULL_PTR
 #define NULL_PTR 0
